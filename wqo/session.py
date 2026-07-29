@@ -132,6 +132,7 @@ class BrainSession(requests.Session):
         url: str,
         *,
         allow_reauth: bool = True,
+        on_throttle=None,
         **kwargs,
     ) -> requests.Response:
         url = endpoints.absolute(url)
@@ -173,6 +174,8 @@ class BrainSession(requests.Session):
                     )
                 # A 429 usually carries Retry-After; honor it over our own guess.
                 if response.status_code == 429:
+                    if on_throttle:
+                        on_throttle()
                     self.governor.sleep_retry_after(response, default=None)
                 else:
                     self.governor.sleep_backoff(attempt)
@@ -265,7 +268,11 @@ class BrainSession(requests.Session):
     # -- convenience -------------------------------------------------------
 
     def json(self, method: str, url: str, **kwargs) -> Any:
-        """Request and decode JSON, raising :class:`ApiError` on failure."""
+        """Request and decode JSON, raising :class:`ApiError` on failure.
+
+        Extra keyword arguments (e.g. ``on_throttle``) pass through to
+        :meth:`request`.
+        """
         response = self.request(method, url, **kwargs)
         if response.status_code >= 400:
             raise ApiError(

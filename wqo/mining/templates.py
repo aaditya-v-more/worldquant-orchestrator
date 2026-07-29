@@ -81,13 +81,13 @@ TEMPLATES: tuple[Template, ...] = (
     ),
     Template(
         name="mean_reversion_ratio",
-        expr="{field} / (ts_mean({field}, {d}) + 1e-9)",
+        expr="{field} / (ts_mean({field}, {d}) + 0.000000001)",
         operators=("ts_mean",),
         knobs={"d": LONG_DAYS},
     ),
     Template(
         name="scaled_change",
-        expr="ts_delta({field}, {d}) / (ts_std_dev({field}, {w}) + 1e-9)",
+        expr="ts_delta({field}, {d}) / (ts_std_dev({field}, {w}) + 0.000000001)",
         operators=("ts_delta", "ts_std_dev"),
         knobs={"d": DAYS, "w": LONG_DAYS},
     ),

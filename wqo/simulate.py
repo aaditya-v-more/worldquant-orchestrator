@@ -98,8 +98,11 @@ class SlotManager:
 
     Starts at whatever concurrency was learned on a previous run (1 for a fresh
     account), grows by one after a run of clean acquisitions, and shrinks
-    immediately on a 429. The session's own 429 retry loop is the safety net;
-    this just avoids walking into the wall repeatedly.
+    immediately on a 429. Growth is gated on a ``_throttled`` flag so that, once
+    a 429 proves the limit too high, the next clean run only clears the flag and
+    does not grow — this keeps a single-slot account from drifting up to the max
+    on polling traffic that never sees a 429. The session's own 429 retry loop
+    is the safety net; this just avoids walking into the wall repeatedly.
     """
 
     def __init__(self, ledger: Optional[Ledger] = None, initial: Optional[int] = None):
@@ -109,6 +112,10 @@ class SlotManager:
         self.limit = max(1, min(self.limit, config.MAX_CONCURRENCY))
         self._active = 0
         self._clean_streak = 0
+        # Set when a POST 429 proves the current limit too high; cleared by the
+        # next clean acquisition. Growth is blocked while it is set so a single
+        # polling success can never undo a real throttle signal.
+        self._throttled = False
         self._cond = threading.Condition()
 
     def acquire(self) -> None:
@@ -124,6 +131,12 @@ class SlotManager:
 
     def report_success(self) -> None:
         with self._cond:
+            # A clean run is only evidence of spare capacity once we are not
+            # reacting to a recent throttle; otherwise it just clears the flag.
+            if self._throttled:
+                self._throttled = False
+                self._clean_streak = 0
+                return
             self._clean_streak += 1
             if self._clean_streak >= 3 and self.limit < config.MAX_CONCURRENCY:
                 self.limit += 1
@@ -134,6 +147,7 @@ class SlotManager:
     def report_throttled(self) -> None:
         with self._cond:
             self._clean_streak = 0
+            self._throttled = True
             if self.limit > 1:
                 self.limit -= 1
                 self._persist()
@@ -215,7 +229,14 @@ def simulate_one(
     if slots:
         slots.acquire()
     try:
-        response = session.request("POST", endpoints.SIMULATIONS, json=job.payload())
+        # A 429 here is slot pressure; feed it straight to the SlotManager so it
+        # shrinks the limit now rather than after this job burns its retry budget.
+        response = session.request(
+            "POST",
+            endpoints.SIMULATIONS,
+            json=job.payload(),
+            on_throttle=slots.report_throttled if slots else None,
+        )
         if response.status_code == 429:
             if slots:
                 slots.report_throttled()

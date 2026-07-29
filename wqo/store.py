@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -79,15 +80,20 @@ class Ledger:
         self.path = Path(path) if path else config.LEDGER_PATH
         if str(self.path) != ":memory:":
             self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(str(self.path))
+        # check_same_thread=False because simulate_many runs a worker pool that
+        # shares this ledger; self._lock serializes access so the shared
+        # connection is only ever used by one thread at a time.
+        self.conn = sqlite3.connect(str(self.path), check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
+        self._lock = threading.RLock()
         self.conn.executescript(SCHEMA)
         self.conn.commit()
 
     # -- lifecycle ---------------------------------------------------------
 
     def close(self) -> None:
-        self.conn.close()
+        with self._lock:
+            self.conn.close()
 
     def __enter__(self) -> "Ledger":
         return self
@@ -105,57 +111,62 @@ class Ledger:
         source: str = "manual",
         label: Optional[str] = None,
     ) -> int:
-        cur = self.conn.execute(
-            "INSERT INTO simulations (created_at, code, settings_json, status, source, label)"
-            " VALUES (?, ?, ?, 'PENDING', ?, ?)",
-            (time.time(), code, json.dumps(settings, sort_keys=True), source, label),
-        )
-        self.conn.commit()
-        return int(cur.lastrowid)
+        with self._lock:
+            cur = self.conn.execute(
+                "INSERT INTO simulations (created_at, code, settings_json, status, source, label)"
+                " VALUES (?, ?, ?, 'PENDING', ?, ?)",
+                (time.time(), code, json.dumps(settings, sort_keys=True), source, label),
+            )
+            self.conn.commit()
+            return int(cur.lastrowid)
 
     def attach_sim_url(self, row_id: int, sim_url: str) -> None:
-        self.conn.execute(
-            "UPDATE simulations SET sim_url = ? WHERE id = ?", (sim_url, row_id)
-        )
-        self.conn.commit()
+        with self._lock:
+            self.conn.execute(
+                "UPDATE simulations SET sim_url = ? WHERE id = ?", (sim_url, row_id)
+            )
+            self.conn.commit()
 
     def finish_simulation(self, row_id: int, alpha: dict) -> None:
         """Record a completed simulation from a full ``/alphas/{id}`` payload."""
         is_stats = alpha.get("is") or {}
-        self.conn.execute(
-            """UPDATE simulations SET
-                   status = 'COMPLETE', alpha_id = ?, sharpe = ?, fitness = ?,
-                   turnover = ?, returns = ?, drawdown = ?, margin = ?,
-                   long_count = ?, short_count = ?, checks_json = ?
-               WHERE id = ?""",
-            (
-                alpha.get("id"),
-                is_stats.get("sharpe"),
-                is_stats.get("fitness"),
-                is_stats.get("turnover"),
-                is_stats.get("returns"),
-                is_stats.get("drawdown"),
-                is_stats.get("margin"),
-                is_stats.get("longCount"),
-                is_stats.get("shortCount"),
-                json.dumps(is_stats.get("checks") or []),
-                row_id,
-            ),
-        )
-        self.conn.commit()
+        with self._lock:
+            self.conn.execute(
+                """UPDATE simulations SET
+                       status = 'COMPLETE', alpha_id = ?, sharpe = ?, fitness = ?,
+                       turnover = ?, returns = ?, drawdown = ?, margin = ?,
+                       long_count = ?, short_count = ?, checks_json = ?
+                   WHERE id = ?""",
+                (
+                    alpha.get("id"),
+                    is_stats.get("sharpe"),
+                    is_stats.get("fitness"),
+                    is_stats.get("turnover"),
+                    is_stats.get("returns"),
+                    is_stats.get("drawdown"),
+                    is_stats.get("margin"),
+                    is_stats.get("longCount"),
+                    is_stats.get("shortCount"),
+                    json.dumps(is_stats.get("checks") or []),
+                    row_id,
+                ),
+            )
+            self.conn.commit()
 
     def fail_simulation(self, row_id: int, error: str) -> None:
-        self.conn.execute(
-            "UPDATE simulations SET status = 'ERROR', error = ? WHERE id = ?",
-            (error, row_id),
-        )
-        self.conn.commit()
+        with self._lock:
+            self.conn.execute(
+                "UPDATE simulations SET status = 'ERROR', error = ? WHERE id = ?",
+                (error, row_id),
+            )
+            self.conn.commit()
 
     def simulations_today(self) -> int:
-        cur = self.conn.execute(
-            "SELECT COUNT(*) FROM simulations WHERE created_at >= ?", (_utc_day_start(),)
-        )
-        return int(cur.fetchone()[0])
+        with self._lock:
+            cur = self.conn.execute(
+                "SELECT COUNT(*) FROM simulations WHERE created_at >= ?", (_utc_day_start(),)
+            )
+            return int(cur.fetchone()[0])
 
     def find_by_code(self, code: str, settings: dict) -> Optional[sqlite3.Row]:
         """Look up a prior completed run of the exact same code+settings.
@@ -163,51 +174,57 @@ class Ledger:
         Used to skip re-simulating something already tested, which is both
         faster and one fewer request against the account.
         """
-        cur = self.conn.execute(
-            "SELECT * FROM simulations WHERE code = ? AND settings_json = ?"
-            " AND status = 'COMPLETE' ORDER BY created_at DESC LIMIT 1",
-            (code, json.dumps(settings, sort_keys=True)),
-        )
-        return cur.fetchone()
+        with self._lock:
+            cur = self.conn.execute(
+                "SELECT * FROM simulations WHERE code = ? AND settings_json = ?"
+                " AND status = 'COMPLETE' ORDER BY created_at DESC LIMIT 1",
+                (code, json.dumps(settings, sort_keys=True)),
+            )
+            return cur.fetchone()
 
     def recent_simulations(self, limit: int = 20) -> list[sqlite3.Row]:
-        cur = self.conn.execute(
-            "SELECT * FROM simulations ORDER BY created_at DESC LIMIT ?", (limit,)
-        )
-        return list(cur.fetchall())
+        with self._lock:
+            cur = self.conn.execute(
+                "SELECT * FROM simulations ORDER BY created_at DESC LIMIT ?", (limit,)
+            )
+            return list(cur.fetchall())
 
     # -- submissions -------------------------------------------------------
 
     def record_submission(self, alpha_id: str, outcome: str, detail: Any = None) -> None:
-        self.conn.execute(
-            "INSERT INTO submissions (created_at, alpha_id, outcome, detail_json)"
-            " VALUES (?, ?, ?, ?)",
-            (time.time(), alpha_id, outcome, json.dumps(detail) if detail else None),
-        )
-        self.conn.commit()
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO submissions (created_at, alpha_id, outcome, detail_json)"
+                " VALUES (?, ?, ?, ?)",
+                (time.time(), alpha_id, outcome, json.dumps(detail) if detail else None),
+            )
+            self.conn.commit()
 
     def submissions_today(self) -> int:
-        cur = self.conn.execute(
-            "SELECT COUNT(*) FROM submissions WHERE created_at >= ? AND outcome = 'SUBMITTED'",
-            (_utc_day_start(),),
-        )
-        return int(cur.fetchone()[0])
+        with self._lock:
+            cur = self.conn.execute(
+                "SELECT COUNT(*) FROM submissions WHERE created_at >= ? AND outcome = 'SUBMITTED'",
+                (_utc_day_start(),),
+            )
+            return int(cur.fetchone()[0])
 
     # -- key/value ---------------------------------------------------------
 
     def get(self, key: str, default: Any = None) -> Any:
-        cur = self.conn.execute("SELECT value_json FROM kv WHERE key = ?", (key,))
-        row = cur.fetchone()
-        return json.loads(row[0]) if row else default
+        with self._lock:
+            cur = self.conn.execute("SELECT value_json FROM kv WHERE key = ?", (key,))
+            row = cur.fetchone()
+            return json.loads(row[0]) if row else default
 
     def set(self, key: str, value: Any) -> None:
-        self.conn.execute(
-            "INSERT INTO kv (key, value_json, updated_at) VALUES (?, ?, ?)"
-            " ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json,"
-            " updated_at = excluded.updated_at",
-            (key, json.dumps(value), time.time()),
-        )
-        self.conn.commit()
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO kv (key, value_json, updated_at) VALUES (?, ?, ?)"
+                " ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json,"
+                " updated_at = excluded.updated_at",
+                (key, json.dumps(value), time.time()),
+            )
+            self.conn.commit()
 
 
 class BudgetExceeded(RuntimeError):

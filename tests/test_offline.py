@@ -148,6 +148,31 @@ def test_kv_roundtrip(ledger):
     assert ledger.get("missing", "fallback") == "fallback"
 
 
+def test_ledger_is_usable_from_worker_threads(ledger):
+    # simulate_many shares one Ledger across a thread pool; sqlite's default
+    # check_same_thread=True raised ProgrammingError on every mining run.
+    import threading
+
+    settings = build_settings(region="USA")
+    errors = []
+
+    def worker(i):
+        try:
+            row_id = ledger.start_simulation(f"rank(close{i})", settings)
+            ledger.finish_simulation(row_id, {"id": f"AL{i}", "is": {"sharpe": 1.0}})
+            ledger.simulations_today()
+        except Exception as exc:  # noqa: BLE001 — surfaced to the main thread
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert errors == []
+    assert ledger.simulations_today() == 8
+
+
 # --------------------------------------------------------------------------
 # gate
 # --------------------------------------------------------------------------
@@ -335,9 +360,23 @@ def test_slot_manager_shrinks_on_throttle_and_grows_on_success(ledger):
     assert slots.limit == 2
     assert ledger.get("learned_concurrency") == 2
 
+    # The first clean run only clears the throttle flag; growth needs a streak
+    # of genuinely clean acquisitions afterwards.
+    slots.report_success()
+    assert slots.limit == 2
     for _ in range(3):
         slots.report_success()
     assert slots.limit == 3
+
+
+def test_slot_manager_throttle_blocks_drift_on_single_slot(ledger):
+    # A one-slot account that keeps hitting 429s must not creep upward just
+    # because polling succeeds in between; every throttle must win.
+    slots = SlotManager(ledger, initial=1)
+    for _ in range(20):
+        slots.report_success()  # polling success: never a 429
+        slots.report_throttled()  # but the next POST proves one slot
+        assert slots.limit == 1
 
 
 def test_slot_manager_never_drops_below_one(ledger):
@@ -368,6 +407,15 @@ def test_backfill_window_matches_quarterly_reporting():
     # 60 trading days is the documented norm for quarterly fundamentals; a
     # shorter window leaves NaN gaps that distort cross-sectional ranks.
     assert templates.BACKFILL_DAYS == 60
+
+
+def test_template_expressions_avoid_scientific_notation():
+    # BRAIN's FASTEXPR parser rejects literals like 1e-9 ("Unexpected character
+    # 'e'"), so epsilons must be written as plain decimals.
+    import re
+
+    for template in templates.TEMPLATES:
+        assert not re.search(r"\d[eE][+-]?\d", template.expr), template.name
 
 
 def test_reference_patterns_are_available():
