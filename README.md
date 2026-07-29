@@ -112,6 +112,24 @@ Tunable via environment variables — `WQO_MIN_INTERVAL`, `WQO_JITTER`,
 `WQO_SIM_BUDGET`, `WQO_SUBMIT_BUDGET`, `WQO_MAX_CONCURRENCY`, and the
 `WQO_MIN_SHARPE` / `WQO_MAX_TURNOVER` style gate thresholds. See `wqo/config.py`.
 
+## Editor support
+
+The seven skills live in `.claude/skills/` and are symlinked so other agents pick
+up the same files — edit once, every tool sees it:
+
+```
+.github/skills -> ../.claude/skills   # GitHub Copilot (VS Code, CLI, cloud agent)
+.qoder/skills  -> ../.claude/skills   # Qoder
+```
+
+Both use the same `SKILL.md` + YAML frontmatter format, so no conversion is
+needed. Copilot also reads `.claude/skills` directly; the `.github/skills` link
+is there so the intent is explicit and the CLI and cloud agent resolve it too.
+
+These are relative symlinks and survive a clone on macOS and Linux. On Windows,
+git needs `core.symlinks=true` and Developer Mode, otherwise they land as plain
+text files — copy the directories instead if that comes up.
+
 ## Reference
 
 [`docs/alpha-research.md`](docs/alpha-research.md) — passing criteria, the fitness
