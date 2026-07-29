@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+data/
+.pytest_cache/
+
+# never commit credentials or sessions, even if someone moves them in-repo
+*credentials*.json
+*session*.json
+.DS_Store

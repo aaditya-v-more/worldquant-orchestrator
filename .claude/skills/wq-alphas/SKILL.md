@@ -1,0 +1,46 @@
+---
+name: wq-alphas
+description: List, filter, and organize alphas in a WorldQuant BRAIN account — search by Sharpe, region, status, colour or tag, and set names, tags, colours, categories and descriptions. Use when the user asks what alphas they have, wants to find their best unsubmitted alphas, or wants to label/organize their alpha library.
+---
+
+# WorldQuant BRAIN — alpha library
+
+## Finding alphas
+
+```bash
+.venv/bin/python -m wqo alpha list --status UNSUBMITTED --min-sharpe 1.25 --limit 50
+.venv/bin/python -m wqo alpha list --region USA --universe TOP3000 --order -is.sharpe
+.venv/bin/python -m wqo alpha list --tag candidate --color GREEN
+```
+
+Filters: `--status` (`UNSUBMITTED`, `ACTIVE`, ...), `--region`, `--universe`,
+`--delay`, `--min-sharpe`, `--min-fitness`, `--color`, `--tag`, `--order`,
+`--limit`. `--order` takes any API field, prefix `-` for descending.
+
+The workhorse query for "what should I look at next" is:
+
+```bash
+.venv/bin/python -m wqo alpha list --status UNSUBMITTED --min-sharpe 1.25 --order -is.fitness
+```
+
+## Organizing
+
+```bash
+.venv/bin/python -m wqo alpha tag <alpha_id> \
+  --name "revenue momentum, subindustry neutral" \
+  --color GREEN --tags "fundamental,momentum" \
+  --description "ts_rank of backfilled revenue, neutralized by subindustry"
+```
+
+Colours: `RED`, `GREEN`, `BLUE`, `YELLOW`, `PURPLE`. Only the flags you pass are
+changed; everything else is left alone.
+
+Tagging is genuinely useful, not decoration — the mining loop produces a lot of
+alphas, and `--tag` plus `alpha list --tag` is how a shortlist stays findable
+across sessions.
+
+Suggested convention:
+
+- `--color GREEN` — passed the gate, awaiting the user's submission decision
+- `--color YELLOW` — promising but one check short
+- `--color RED` — kept for reference, not viable
