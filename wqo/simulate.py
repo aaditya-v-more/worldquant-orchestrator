@@ -25,6 +25,12 @@ from .store import Ledger, check_simulation_budget
 
 SLOTS_KEY = "learned_concurrency"
 
+#: Clean simulations required before trying one more concurrent slot.
+GROWTH_STREAK = 3
+#: Clean simulations required before re-probing a level BRAIN already threw a
+#: 429 at. Deliberately much larger than GROWTH_STREAK.
+RETRY_CEILING_STREAK = 25
+
 
 @dataclass
 class SimJob:
@@ -114,8 +120,12 @@ class SlotManager:
         self._clean_streak = 0
         # Set when a POST 429 proves the current limit too high; cleared by the
         # next clean acquisition. Growth is blocked while it is set so a single
-        # polling success can never undo a real throttle signal.
+        # success can never immediately undo a real throttle signal.
         self._throttled = False
+        # The lowest limit BRAIN has ever throttled us at. Growing back to it
+        # requires a much longer clean streak, so a 1-slot account settles at 1
+        # instead of oscillating 1 -> 2 -> 429 -> 1 forever.
+        self._ceiling: Optional[int] = None
         self._cond = threading.Condition()
 
     def acquire(self) -> None:
@@ -138,16 +148,28 @@ class SlotManager:
                 self._clean_streak = 0
                 return
             self._clean_streak += 1
-            if self._clean_streak >= 3 and self.limit < config.MAX_CONCURRENCY:
+            if self.limit >= config.MAX_CONCURRENCY:
+                return
+            # Re-probing a level BRAIN already rejected costs a 429 and a retry
+            # cycle, so demand far more evidence before trying it again.
+            needed = RETRY_CEILING_STREAK if self._at_ceiling() else GROWTH_STREAK
+            if self._clean_streak >= needed:
                 self.limit += 1
                 self._clean_streak = 0
                 self._persist()
                 self._cond.notify_all()
 
+    def _at_ceiling(self) -> bool:
+        return self._ceiling is not None and self.limit + 1 >= self._ceiling
+
     def report_throttled(self) -> None:
         with self._cond:
             self._clean_streak = 0
             self._throttled = True
+            # Remember the level that failed, keeping the lowest ever seen.
+            self._ceiling = (
+                self.limit if self._ceiling is None else min(self._ceiling, self.limit)
+            )
             if self.limit > 1:
                 self.limit -= 1
                 self._persist()
@@ -237,10 +259,9 @@ def simulate_one(
             json=job.payload(),
             on_throttle=slots.report_throttled if slots else None,
         )
-        if response.status_code == 429:
-            if slots:
-                slots.report_throttled()
-            raise ApiError("simulation slots exhausted", response)
+        # No 429 check here: session.request() never returns a retryable status
+        # — it either retries past it or raises ApiError. on_throttle above is
+        # what feeds slot pressure back to the SlotManager.
         if response.status_code >= 400:
             raise ApiError(
                 f"simulation rejected ({response.status_code}): {response.text[:300]}",

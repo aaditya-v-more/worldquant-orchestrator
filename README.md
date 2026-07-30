@@ -72,6 +72,14 @@ python -m wqo submit <alpha_id> --confirm  # actually submits
 # mining
 python -m wqo mine --dataset fundamental6 --budget 40 [--dry-run]
 
+# account: competitions, standing, team, learn, notifications
+python -m wqo account status                    # rank, score, level progress
+python -m wqo account competitions [--mine]
+python -m wqo account competition IQC2026S1 [--alphas|--agreement]
+python -m wqo account activity                  # counters + referrals
+python -m wqo account teams|events|tutorials|messages|agreements
+python -m wqo account probe                     # what this level can reach
+
 # anything not wrapped above
 python -m wqo api GET /users/self/activities
 python -m wqo discover
@@ -138,11 +146,16 @@ formula, proven expression patterns, and a symptom → fix table. Distilled from
 root). The gate thresholds and mining templates are derived from it; where it
 conflicts with BRAIN's own `/check`, BRAIN wins.
 
+[`docs/api-map.md`](docs/api-map.md) — every website tab mapped to its endpoint,
+plus what is *not* available. Notably there is no leaderboard endpoint and
+`GET /alphas` is 405: you can read your own rank, never other people's alphas.
+
 ## Layout
 
 ```
 docs/
   alpha-research.md   distilled research reference
+  api-map.md          tab -> endpoint map, and what is unavailable
 wqo/
   endpoints.py    API URLs
   config.py       paths, pacing, budgets, gate thresholds
@@ -155,6 +168,7 @@ wqo/
   gate.py         local thresholds + BRAIN checks -> PASS/FAIL report
   submit.py       confirmation-gated submission
   mining/         templates, candidate generation, ranking
+  account.py      competitions, standing, team, learn, notifications
   __main__.py     CLI
 ```
 

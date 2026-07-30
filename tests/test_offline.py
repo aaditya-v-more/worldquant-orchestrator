@@ -361,12 +361,18 @@ def test_slot_manager_shrinks_on_throttle_and_grows_on_success(ledger):
     assert ledger.get("learned_concurrency") == 2
 
     # The first clean run only clears the throttle flag; growth needs a streak
-    # of genuinely clean acquisitions afterwards.
+    # of genuinely clean acquisitions afterwards. Growth back to 3 is *not*
+    # asserted here — 3 is now a known-bad ceiling and re-probing it takes a
+    # much longer streak (see test_slot_manager_remembers_a_throttled_ceiling).
     slots.report_success()
     assert slots.limit == 2
+
+    # A manager that has never been throttled grows on the ordinary streak.
+    fresh = SlotManager(ledger, initial=2)
+    fresh._ceiling = None
     for _ in range(3):
-        slots.report_success()
-    assert slots.limit == 3
+        fresh.report_success()
+    assert fresh.limit == 3
 
 
 def test_slot_manager_throttle_blocks_drift_on_single_slot(ledger):
@@ -377,6 +383,45 @@ def test_slot_manager_throttle_blocks_drift_on_single_slot(ledger):
         slots.report_success()  # polling success: never a 429
         slots.report_throttled()  # but the next POST proves one slot
         assert slots.limit == 1
+
+
+def test_slot_manager_remembers_a_throttled_ceiling(ledger):
+    # Once BRAIN 429s at 3 concurrent, growing back to 3 must take far more
+    # evidence than the ordinary streak, otherwise the limit oscillates
+    # 2 -> 3 -> 429 -> 2 forever on an account that only has 2 slots.
+    from wqo.simulate import GROWTH_STREAK, RETRY_CEILING_STREAK
+
+    slots = SlotManager(ledger, initial=3)
+    slots.report_throttled()
+    assert slots.limit == 2
+
+    slots.report_success()  # clears the throttle flag, does not grow
+    assert slots.limit == 2
+
+    for _ in range(GROWTH_STREAK):
+        slots.report_success()
+    assert slots.limit == 2, "must not re-probe the ceiling on a short streak"
+
+    for _ in range(RETRY_CEILING_STREAK):
+        slots.report_success()
+    assert slots.limit == 3, "a long clean streak may re-probe the ceiling"
+
+
+def test_slot_manager_grows_freely_below_the_ceiling(ledger):
+    from wqo.simulate import GROWTH_STREAK
+
+    slots = SlotManager(ledger, initial=5)
+    slots.report_throttled()  # ceiling = 5, limit = 4
+    slots.report_success()  # clears flag
+    # 4 -> 5 would touch the ceiling, so drop lower first and confirm normal
+    # growth still works well below it.
+    slots.report_throttled()  # ceiling = 4, limit = 3
+    slots.report_throttled()  # ceiling = 3, limit = 2
+    slots.report_success()
+    slots._ceiling = 9  # far above; ordinary growth applies
+    for _ in range(GROWTH_STREAK):
+        slots.report_success()
+    assert slots.limit == 3
 
 
 def test_slot_manager_never_drops_below_one(ledger):

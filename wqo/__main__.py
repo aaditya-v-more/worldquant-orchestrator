@@ -19,6 +19,7 @@ import json
 import sys
 from typing import Any, Optional
 
+from . import account as account_mod
 from . import alphas as alphas_mod
 from . import config, endpoints, mining, submit as submit_mod
 from .catalog import Catalog
@@ -399,6 +400,59 @@ def cmd_mine(args) -> int:
 
 
 # --------------------------------------------------------------------------
+# account: competitions, standing, team, learn, notifications
+# --------------------------------------------------------------------------
+
+
+def cmd_account(args) -> int:
+    session = _session(args)
+    command = args.account_command
+
+    if command == "status":
+        emit(account_mod.standing(session))
+    elif command == "competitions":
+        items = account_mod.competitions(session, mine=args.mine)
+        emit(
+            items
+            if args.raw
+            else [
+                {
+                    "id": c.get("id"),
+                    "name": c.get("name"),
+                    "status": c.get("status"),
+                    "scoring": c.get("scoring"),
+                    "teamBased": c.get("teamBased"),
+                    "startDate": c.get("startDate"),
+                    "endDate": c.get("endDate"),
+                }
+                for c in items
+            ]
+        )
+    elif command == "competition":
+        if args.alphas:
+            emit(account_mod.competition_alphas(session, args.competition_id))
+        elif args.agreement:
+            emit(account_mod.competition_agreement(session, args.competition_id))
+        else:
+            emit(account_mod.competition(session, args.competition_id))
+    elif command == "activity":
+        emit(account_mod.activity_summary(session))
+    elif command == "teams":
+        emit(account_mod.teams(session))
+    elif command == "events":
+        emit(account_mod.events(session))
+    elif command == "tutorials":
+        emit(account_mod.tutorials(session))
+    elif command == "messages":
+        emit(account_mod.messages(session))
+    elif command == "agreements":
+        emit(account_mod.agreements(session))
+    elif command == "probe":
+        emit(account_mod.probe(session))
+    return EXIT_OK
+
+
+# --------------------------------------------------------------------------
 # raw api / discovery
 # --------------------------------------------------------------------------
 
@@ -578,6 +632,33 @@ def build_parser() -> argparse.ArgumentParser:
     mine.add_argument("--seed", type=int)
     mine.add_argument("--dry-run", action="store_true", help="print candidates, simulate nothing")
     mine.set_defaults(func=cmd_mine)
+
+    # account
+    acct = sub.add_parser(
+        "account", help="competitions, standing, team, learn, notifications"
+    )
+    acct_sub = acct.add_subparsers(dest="account_command", required=True)
+    acct_sub.add_parser("status", help="your rank, score, and level progress")
+    comps = acct_sub.add_parser("competitions", help="list competitions")
+    comps.add_argument("--mine", action="store_true", help="only ones you joined")
+    comps.add_argument("--raw", action="store_true", help="full API records")
+    comp = acct_sub.add_parser("competition", help="one competition")
+    comp.add_argument("competition_id")
+    comp.add_argument("--alphas", action="store_true", help="your entered alphas")
+    comp.add_argument("--agreement", action="store_true", help="terms text")
+    acct_sub.add_parser(
+        "activity", help="simulation/submission counters and referrals"
+    )
+    for name, helptext in (
+        ("teams", "teams you belong to"),
+        ("events", "webinars and scheduled events"),
+        ("tutorials", "the Learn tab course list"),
+        ("messages", "platform notifications"),
+        ("agreements", "agreements on file"),
+        ("probe", "which endpoints this account level can reach"),
+    ):
+        acct_sub.add_parser(name, help=helptext)
+    acct.set_defaults(func=cmd_account)
 
     # api
     api = sub.add_parser("api", help="raw authenticated request to any endpoint")
