@@ -22,24 +22,14 @@ class GenerationSpec:
     #: Settings variants swept per candidate expression. Each entry is a dict of
     #: setting overrides merged onto the defaults.
     #:
-    #: Derived from *151 Trading Strategies* (Kakushadze & Serur):
-    #: - Trend/momentum strategies (§3.1, §10.4): higher decay (10) smooths
-    #:   turnover; MARKET neutralization captures broad trends.
-    #: - Mean-reversion strategies (§3.9, §10.3): low decay (4) keeps the
-    #:   signal reactive; SUBINDUSTRY neutralization isolates stock-specific.
-    #: - Multifactor/value (§3.3, §3.6): moderate decay (6), INDUSTRY neut.
-    #: - Lower truncation (0.05) for high-turnover signals to reduce weight
-    #:   concentration; higher (0.10) for slow-moving fundamentals.
-    variants: tuple[dict, ...] = (
-        # Default balanced (existing behaviour)
-        {"neutralization": "SUBINDUSTRY", "decay": 6, "truncation": 0.08},
-        # Momentum / trend-following regime (§3.1, §10.4)
-        {"neutralization": "MARKET", "decay": 10, "truncation": 0.05},
-        # Fast mean-reversion regime (§3.9, §10.3)
-        {"neutralization": "SUBINDUSTRY", "decay": 4, "truncation": 0.08},
-        # Fundamental / value regime (§3.3, §3.6)
-        {"neutralization": "INDUSTRY", "decay": 8, "truncation": 0.10},
-    )
+    #: Left as ``None``, every expression runs once under the settings its
+    #: template declares via :data:`config.REGIMES` — a momentum template gets
+    #: momentum decay, a reversion template gets reversion decay. Setting this
+    #: explicitly overrides that and sweeps every expression across every
+    #: variant given, which multiplies job count without adding expressions.
+    #: ``budget`` caps the job list, so an N-variant sweep divides the number of
+    #: distinct expressions actually simulated by N.
+    variants: Optional[tuple[dict, ...]] = None
     template_names: Optional[tuple[str, ...]] = None
     max_fields: int = 40
     budget: int = 40
@@ -89,11 +79,16 @@ def generate(
             candidates = [t for t in candidates if t.name in wanted]
 
         for template in candidates:
+            # Without an explicit sweep the template's own regime supplies the
+            # settings, so each expression costs exactly one simulation slot.
+            variants = spec.variants or (
+                config.REGIMES.get(template.regime, config.REGIMES["balanced"]),
+            )
             for expr in template.expand(field_id):
                 if expr in codes or expr in already:
                     continue
                 codes.add(expr)
-                for variant in spec.variants:
+                for variant in variants:
                     settings = build_settings(
                         region=spec.region,
                         delay=spec.delay,
