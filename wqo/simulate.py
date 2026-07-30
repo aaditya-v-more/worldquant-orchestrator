@@ -13,6 +13,8 @@ account's real concurrency from those 429s instead of assuming a tier.
 
 from __future__ import annotations
 
+import os
+import socket
 import threading
 import time
 from dataclasses import dataclass
@@ -21,7 +23,7 @@ from typing import Iterable, Optional
 
 from . import config, endpoints
 from .session import ApiError, BrainSession
-from .store import Ledger, check_simulation_budget
+from .store import SLOT_POLL_INTERVAL, Ledger, check_simulation_budget
 
 SLOTS_KEY = "learned_concurrency"
 
@@ -99,8 +101,13 @@ def build_settings(**overrides) -> dict:
     return settings
 
 
+def _owner_id() -> str:
+    """Identify this process/thread in the shared queue, for diagnostics."""
+    return f"{socket.gethostname()}:{os.getpid()}:{threading.current_thread().name}"
+
+
 class SlotManager:
-    """Adaptive concurrency limiter.
+    """Adaptive concurrency limiter, shared across processes.
 
     Starts at whatever concurrency was learned on a previous run (1 for a fresh
     account), grows by one after a run of clean acquisitions, and shrinks
@@ -109,9 +116,22 @@ class SlotManager:
     does not grow — this keeps a single-slot account from drifting up to the max
     on polling traffic that never sees a 429. The session's own 429 retry loop
     is the safety net; this just avoids walking into the wall repeatedly.
+
+    The limit is enforced **per account, not per process**. With a ledger
+    attached, :meth:`acquire` takes a ticket in the ledger's ``slot_queue``
+    table and blocks until it is granted, so several agents running `wqo` at
+    the same time form one queue instead of each firing at the account's only
+    slot and collecting 429s.
     """
 
-    def __init__(self, ledger: Optional[Ledger] = None, initial: Optional[int] = None):
+    def __init__(
+        self,
+        ledger: Optional[Ledger] = None,
+        initial: Optional[int] = None,
+        *,
+        cross_process: bool = True,
+        label: Optional[str] = None,
+    ):
         self.ledger = ledger
         learned = ledger.get(SLOTS_KEY) if ledger else None
         self.limit = int(initial or learned or config.DEFAULT_CONCURRENCY)
@@ -127,14 +147,55 @@ class SlotManager:
         # instead of oscillating 1 -> 2 -> 429 -> 1 forever.
         self._ceiling: Optional[int] = None
         self._cond = threading.Condition()
+        self._shared = bool(ledger) and cross_process
+        self._label = label
 
-    def acquire(self) -> None:
+    def acquire(self, label: Optional[str] = None) -> Optional[int]:
+        """Block until a slot is free. Returns the ticket to hand to release()."""
         with self._cond:
             while self._active >= self.limit:
                 self._cond.wait()
             self._active += 1
+        if not self._shared:
+            return None
+        try:
+            return self._acquire_shared(label or self._label)
+        except Exception:
+            # Never let a queue failure strand the in-process counter.
+            with self._cond:
+                self._active -= 1
+                self._cond.notify()
+            raise
 
-    def release(self) -> None:
+    def _acquire_shared(self, label: Optional[str]) -> int:
+        assert self.ledger is not None
+        ticket = self.ledger.enqueue_slot(_owner_id(), label)
+        while True:
+            # The limit can shrink under us after a 429 in another agent, so it
+            # is re-read from the ledger rather than captured once.
+            limit = self._shared_limit()
+            if self.ledger.try_grant_slot(ticket, limit):
+                return ticket
+            if not self.ledger.slot_ticket_alive(ticket):
+                # Reaped while waiting — this process stalled. Rejoin the line.
+                ticket = self.ledger.enqueue_slot(_owner_id(), label)
+            time.sleep(SLOT_POLL_INTERVAL)
+
+    def _shared_limit(self) -> int:
+        if not self.ledger:
+            return self.limit
+        learned = self.ledger.get(SLOTS_KEY)
+        limit = int(learned) if learned else self.limit
+        return max(1, min(limit, config.MAX_CONCURRENCY))
+
+    def heartbeat(self, ticket: Optional[int]) -> None:
+        """Keep a held slot from being reaped during a long simulation poll."""
+        if ticket is not None and self.ledger:
+            self.ledger.heartbeat_slot(ticket)
+
+    def release(self, ticket: Optional[int] = None) -> None:
+        if ticket is not None and self.ledger:
+            self.ledger.release_slot(ticket)
         with self._cond:
             self._active -= 1
             self._cond.notify()
@@ -180,11 +241,15 @@ class SlotManager:
 
 
 def _poll_until_done(
-    session: BrainSession, sim_url: str, *, on_progress=None
+    session: BrainSession, sim_url: str, *, on_progress=None, heartbeat=None
 ) -> dict:
     """Poll a simulation progress URL until it resolves, honoring Retry-After."""
     deadline = time.monotonic() + config.PACING.poll_timeout
     while True:
+        # Prove to the shared slot queue that this holder is still alive; a
+        # simulation can poll for minutes and must not be reaped mid-flight.
+        if heartbeat:
+            heartbeat()
         response = session.request("GET", sim_url)
         if response.status_code >= 400:
             raise ApiError(
@@ -248,8 +313,7 @@ def simulate_one(
     else:
         row_id = None
 
-    if slots:
-        slots.acquire()
+    ticket = slots.acquire(label=job.label) if slots else None
     try:
         # A 429 here is slot pressure; feed it straight to the SlotManager so it
         # shrinks the limit now rather than after this job burns its retry budget.
@@ -278,7 +342,12 @@ def simulate_one(
         if ledger and row_id is not None:
             ledger.attach_sim_url(row_id, sim_url)
 
-        body = _poll_until_done(session, sim_url, on_progress=on_progress)
+        body = _poll_until_done(
+            session,
+            sim_url,
+            on_progress=on_progress,
+            heartbeat=(lambda: slots.heartbeat(ticket)) if slots else None,
+        )
         alpha_id = body["alpha"]
         alpha = session.json("GET", endpoints.alpha(alpha_id))
         if slots:
@@ -306,7 +375,7 @@ def simulate_one(
         )
     finally:
         if slots:
-            slots.release()
+            slots.release(ticket)
 
 
 def simulate_many(
@@ -334,10 +403,15 @@ def simulate_many(
     results: list[SimResult] = []
     results_lock = threading.Lock()
 
-    # A fixed worker pool bounded by MAX_CONCURRENCY; SlotManager throttles how
-    # many of these are actually in flight at once. Pooling matters because a
-    # mining run can queue thousands of jobs and we will not spawn a thread each.
-    pool_size = min(len(jobs), config.MAX_CONCURRENCY)
+    # A small fixed worker pool; SlotManager throttles how many are actually in
+    # flight. Pooling matters because a mining run can queue thousands of jobs
+    # and we will not spawn a thread each.
+    #
+    # Sized to the learned limit plus one rather than to MAX_CONCURRENCY. The
+    # extra threads a bigger pool would create are harmless — SlotManager parks
+    # them before they reach the shared queue — but they are also useless, and
+    # one spare is enough to keep the pipeline warm if the limit grows mid-run.
+    pool_size = min(len(jobs), max(2, slots.limit + 1), config.MAX_CONCURRENCY)
 
     def worker() -> None:
         while True:
