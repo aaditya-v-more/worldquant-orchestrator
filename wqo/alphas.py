@@ -11,6 +11,7 @@ empty body plus a ``Retry-After`` header until the result is ready.
 
 from __future__ import annotations
 
+import re
 import time
 from typing import Any, Iterator, Optional
 
@@ -160,6 +161,132 @@ def search(
 
 
 # --------------------------------------------------------------------------
+# Naming convention
+# --------------------------------------------------------------------------
+#
+# A freshly simulated alpha has name=null, no tags, no colour and no
+# description, so the BRAIN dashboard shows a wall of "anonymous" rows that no
+# one — human or agent — can tell apart. Everything below derives those fields
+# from the alpha record itself, so the convention is reproducible: run it twice
+# on the same alpha and you get the same labels.
+#
+# `category` is deliberately left alone: BRAIN exposes no endpoint listing the
+# valid category vocabulary (every plausible path 404s), and guessing a value
+# risks a rejected PATCH.
+
+#: Colour convention, matching the wq-alphas skill: green means the local gate
+#: is clean, yellow means one short, red means not viable.
+COLOR_PASS = "GREEN"
+COLOR_BORDERLINE = "YELLOW"
+COLOR_FAIL = "RED"
+
+#: Tag applied to everything this tool labels, so `--tag wqo` finds them all.
+TOOL_TAG = "wqo"
+
+_IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_ASSIGNED = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\s*=(?!=)")
+
+#: Bare words in a FASTEXPR expression that are arguments, not datafields.
+_NOT_DATAFIELDS = {
+    "subindustry", "industry", "sector", "market", "true", "false",
+}
+
+
+def datafields_in(code: str) -> list[str]:
+    """Best-effort list of the datafields an expression reads.
+
+    An identifier followed by ``(`` is an operator call; one that is assigned
+    to is a local variable. What is left over is a datafield or a group name,
+    and group names are filtered out explicitly.
+    """
+    assigned = set(_ASSIGNED.findall(code))
+    out: list[str] = []
+    for match in _IDENT.finditer(code):
+        name = match.group()
+        rest = code[match.end():].lstrip()
+        if rest.startswith("("):  # operator call
+            continue
+        if name in assigned or name in _NOT_DATAFIELDS or name in out:
+            continue
+        out.append(name)
+    return out
+
+
+def _fmt(value: Any, digits: int = 2) -> str:
+    return f"{value:.{digits}f}" if isinstance(value, (int, float)) else "?"
+
+
+def describe(alpha: dict, *, label: Optional[str] = None) -> dict:
+    """Derive name, tags, colour and description for one alpha record.
+
+    ``label`` is the mining label (``template:datafield``) when the alpha came
+    from a batch this tool ran; it makes a far better name than anything
+    recoverable from the expression, so it wins when present.
+    """
+    settings = alpha.get("settings") or {}
+    stats = alpha.get("is") or {}
+    code = (alpha.get("regular") or {}).get("code") or ""
+    region = settings.get("region") or "?"
+    universe = settings.get("universe") or "?"
+    delay = settings.get("delay")
+
+    fields = datafields_in(code)
+    signal = label or (fields[0] if fields else "expr")
+    sharpe, fitness = stats.get("sharpe"), stats.get("fitness")
+
+    name = (
+        f"{region}/{universe} D{delay} · {signal} · "
+        f"Sh{_fmt(sharpe)} Fit{_fmt(fitness)}"
+    )[:120]
+
+    checks = stats.get("checks") or []
+    failed = [c.get("name") for c in checks if c.get("result") == "FAIL"]
+    if not checks:
+        color = COLOR_BORDERLINE
+    elif not failed:
+        color = COLOR_PASS
+    elif len(failed) == 1:
+        color = COLOR_BORDERLINE
+    else:
+        color = COLOR_FAIL
+
+    tags = [TOOL_TAG, region, universe]
+    if delay is not None:
+        tags.append(f"delay-{delay}")
+    neutralization = settings.get("neutralization")
+    if neutralization:
+        tags.append(f"neut-{str(neutralization).lower()}")
+    if label and ":" in label:
+        tags.append(f"tpl-{label.split(':', 1)[0]}")
+    tags.extend(fields[:2])
+    # Duplicates are possible (a datafield named like a region is unlikely but
+    # cheap to guard); BRAIN keeps whatever list it is given.
+    tags = list(dict.fromkeys(t for t in tags if t))[:8]
+
+    description = "\n".join(
+        [
+            f"{code}",
+            "",
+            f"Sharpe {_fmt(sharpe)} · fitness {_fmt(fitness)} · "
+            f"turnover {_fmt(stats.get('turnover'), 4)} · "
+            f"returns {_fmt(stats.get('returns'), 4)} · "
+            f"drawdown {_fmt(stats.get('drawdown'), 4)}",
+            f"{region} {universe} delay {delay}, neutralization {neutralization}, "
+            f"decay {settings.get('decay')}, truncation {settings.get('truncation')}",
+            f"Failing checks: {', '.join(failed) if failed else 'none'}",
+            f"Labelled by wqo{f' from mining label {label}' if label else ''}.",
+        ]
+    )
+
+    return {"name": name, "tags": tags, "color": color, "description": description}
+
+
+def needs_labels(alpha: dict) -> bool:
+    """True when the dashboard would show this alpha as anonymous."""
+    return not (alpha.get("name") or "").strip()
+
+
+# --------------------------------------------------------------------------
 # Writes
 # --------------------------------------------------------------------------
 
@@ -195,3 +322,43 @@ def patch(
     if not body:
         raise ValueError("nothing to update")
     return session.json("PATCH", endpoints.alpha(alpha_id), json=body)
+
+
+def label_all(
+    session: BrainSession,
+    *,
+    labels: Optional[dict[str, str]] = None,
+    limit: int = 100,
+    only_anonymous: bool = True,
+    dry_run: bool = False,
+    status: Optional[str] = None,
+    on_result=None,
+) -> list[dict]:
+    """Apply :func:`describe` to every alpha that is still anonymous.
+
+    ``labels`` maps alpha id -> mining label, normally taken from the local
+    ledger. Alphas simulated elsewhere simply fall back to a datafield-derived
+    name.
+    """
+    labels = labels or {}
+    out: list[dict] = []
+    for alpha in search(session, limit=limit, status=status):
+        if only_anonymous and not needs_labels(alpha):
+            continue
+        alpha_id = alpha.get("id")
+        proposed = describe(alpha, label=labels.get(alpha_id))
+        row = {"alpha_id": alpha_id, **proposed, "applied": False}
+        if not dry_run:
+            patch(
+                session,
+                alpha_id,
+                name=proposed["name"],
+                tags=proposed["tags"],
+                color=proposed["color"],
+                description=proposed["description"],
+            )
+            row["applied"] = True
+        out.append(row)
+        if on_result:
+            on_result(row)
+    return out
