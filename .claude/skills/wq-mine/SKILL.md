@@ -5,6 +5,20 @@ description: Autonomously search for WorldQuant BRAIN alphas — generate candid
 
 # WorldQuant BRAIN — alpha mining
 
+## Before running anything
+
+```bash
+cd /path/to/worldquant-orchestrator
+```
+
+All commands below use `.venv/bin/python -m wqo`. If `.venv` is missing, or you
+have not read the hard rules (never submit without explicit confirmation, never
+bypass the Persona biometric check, never touch the credentials file), read
+[`AGENTS.md`](../../../AGENTS.md) in the repo root first.
+
+Exit codes: `0` ok · `1` error or gate blocked · `2` auth/biometric · `3` budget
+exhausted · `4` submission refused.
+
 One pass = generate candidates → backtest → rank → shortlist. It never submits.
 
 ## Run
@@ -71,6 +85,17 @@ so no slot is wasted discovering an operator is unavailable.
 
 To add a family, append a `Template` to `TEMPLATES` in that file — declare its
 `operators` so the availability filter works.
+
+## Known trap: trivial price reversal
+
+A mining run will surface `rank(-returns)` and `-returns` style expressions near
+the top on raw Sharpe (1.4–1.7 observed). They are textbook one-day reversal,
+almost certainly already in production, and will die on `MATCHES_COMPETITION`.
+
+Treat a high-Sharpe candidate built only from `close`, `returns`, or `volume`
+with suspicion. Gate it before getting excited, and prefer the
+`group_rank_reversal` family on a real datafield even when its Sharpe is lower —
+those are the ones with a chance of clearing correlation.
 
 ## Discipline
 

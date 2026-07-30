@@ -5,6 +5,20 @@ description: List, filter, and organize alphas in a WorldQuant BRAIN account —
 
 # WorldQuant BRAIN — alpha library
 
+## Before running anything
+
+```bash
+cd /path/to/worldquant-orchestrator
+```
+
+All commands below use `.venv/bin/python -m wqo`. If `.venv` is missing, or you
+have not read the hard rules (never submit without explicit confirmation, never
+bypass the Persona biometric check, never touch the credentials file), read
+[`AGENTS.md`](../../../AGENTS.md) in the repo root first.
+
+Exit codes: `0` ok · `1` error or gate blocked · `2` auth/biometric · `3` budget
+exhausted · `4` submission refused.
+
 ## Finding alphas
 
 ```bash
@@ -44,3 +58,12 @@ Suggested convention:
 - `--color GREEN` — passed the gate, awaiting the user's submission decision
 - `--color YELLOW` — promising but one check short
 - `--color RED` — kept for reference, not viable
+
+## Scale
+
+A few mining runs put this account past 120 alphas. `alpha list` defaults to 50
+and pages the API for you; always pass filters rather than pulling everything and
+sorting locally.
+
+Next step for anything that looks good: `wq-analyze` for the gate report, then
+`wq-submit` — which will show the report and wait for the user before submitting.

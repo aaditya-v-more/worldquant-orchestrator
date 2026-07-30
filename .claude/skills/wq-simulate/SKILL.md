@@ -5,10 +5,24 @@ description: Backtest alpha expressions on WorldQuant BRAIN. Use when the user w
 
 # WorldQuant BRAIN — simulation
 
+## Before running anything
+
+```bash
+cd /path/to/worldquant-orchestrator
+```
+
+All commands below use `.venv/bin/python -m wqo`. If `.venv` is missing, or you
+have not read the hard rules (never submit without explicit confirmation, never
+bypass the Persona biometric check, never touch the credentials file), read
+[`AGENTS.md`](../../../AGENTS.md) in the repo root first.
+
+Exit codes: `0` ok · `1` error or gate blocked · `2` auth/biometric · `3` budget
+exhausted · `4` submission refused.
+
 ## One expression
 
 ```bash
-.venv/bin/python -m wqo sim run --code "-ts_delta(ts_backfill(close, 120), 5)" \
+.venv/bin/python -m wqo sim run --code "-ts_delta(ts_backfill(close, 60), 5)" \
   --region USA --universe TOP3000 --delay 1 \
   --neutralization SUBINDUSTRY --decay 6 --truncation 0.08
 ```
@@ -51,6 +65,23 @@ returned with `"cached": true`. Pass `--no-cache` to force a re-run.
 ```
 
 Shows the local ledger of past runs.
+
+## Writing the expression
+
+Full rules in [`docs/fastexpr.md`](../../../docs/fastexpr.md). The ones that
+cost a wasted slot to learn:
+
+- **No scientific notation.** `1e-9` fails with `Unexpected character 'e'`.
+  Write `0.000000001`.
+- **Backfill sparse fundamentals**: `ts_backfill(field, 60)`. Without it the
+  field is NaN most days, which silently concentrates the book into a handful of
+  names and surfaces as an unrelated-looking `CONCENTRATED_WEIGHT` failure.
+- **Check the operator exists** — `wqo data operators`. This account has 66, not
+  the full set, and an unavailable operator fails the simulation.
+- **Groups are bare identifiers**: `group_neutralize(rank(x), subindustry)`, not
+  a quoted string.
+- **`adv20` is a real field** in `pv1`. Use it for liquidity gating instead of
+  recomputing `ts_mean(volume, 20)`.
 
 ## Interpreting results
 

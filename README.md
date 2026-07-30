@@ -1,14 +1,14 @@
 # worldquant-orchestrator
 
 End-to-end control of [WorldQuant BRAIN](https://platform.worldquantbrain.com)
-from Claude Code: data discovery, alpha generation, backtesting, analysis, and
+from any coding agent: data discovery, alpha generation, backtesting, analysis, and
 submission — driven through BRAIN's official REST API rather than the web UI.
 
 Two layers:
 
 - **`wqo/`** — a Python client and CLI. Usable on its own.
-- **`.claude/skills/wq-*`** — thin skill wrappers so Claude knows when and how to
-  invoke each part.
+- **`.claude/skills/wq-*`** — thin skill wrappers so any agent knows when and how
+  to invoke each part. Symlinked for Copilot and Qoder.
 
 ## Setup
 
@@ -54,7 +54,7 @@ python -m wqo data fields --dataset fundamental6 --search revenue
 python -m wqo data operators
 
 # backtesting
-python -m wqo sim run --code "-ts_delta(ts_backfill(close, 120), 5)"
+python -m wqo sim run --code "-ts_delta(ts_backfill(close, 60), 5)"
 python -m wqo sim batch --file ideas.json
 python -m wqo sim recent
 
@@ -122,7 +122,7 @@ Tunable via environment variables — `WQO_MIN_INTERVAL`, `WQO_JITTER`,
 
 ## Editor support
 
-The seven skills live in `.claude/skills/` and are symlinked so other agents pick
+The eight skills live in `.claude/skills/` and are symlinked so other agents pick
 up the same files — edit once, every tool sees it:
 
 ```
@@ -140,6 +140,13 @@ text files — copy the directories instead if that comes up.
 
 ## Reference
 
+**Agents start here:** [`AGENTS.md`](AGENTS.md) — setup, hard rules, account
+constraints, workflow, exit codes. `CLAUDE.md` is a symlink to it, so Claude
+Code, Copilot, Cursor, Qoder and OpenCode all read one source of truth.
+
+[`docs/fastexpr.md`](docs/fastexpr.md) — FASTEXPR syntax constraints, the
+operator set actually available at this account level, and the `pv1` field list.
+
 [`docs/alpha-research.md`](docs/alpha-research.md) — passing criteria, the fitness
 formula, proven expression patterns, and a symptom → fix table. Distilled from
 *Quantitative Alpha Research: WorldQuant BRAIN* (the source PDF is in the repo
@@ -156,6 +163,7 @@ plus what is *not* available. Notably there is no leaderboard endpoint and
 docs/
   alpha-research.md   distilled research reference
   api-map.md          tab -> endpoint map, and what is unavailable
+  fastexpr.md         expression syntax and operator availability
 wqo/
   endpoints.py    API URLs
   config.py       paths, pacing, budgets, gate thresholds

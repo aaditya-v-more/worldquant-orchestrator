@@ -5,7 +5,36 @@ description: Authenticate against WorldQuant BRAIN and check account status, quo
 
 # WorldQuant BRAIN — authentication
 
-All BRAIN work runs through `.venv/bin/python -m wqo` from the repo root.
+## Before running anything
+
+```bash
+cd /path/to/worldquant-orchestrator
+```
+
+All commands below use `.venv/bin/python -m wqo`. If `.venv` is missing, or you
+have not read the hard rules (never submit without explicit confirmation, never
+bypass the Persona biometric check, never touch the credentials file), read
+[`AGENTS.md`](../../../AGENTS.md) in the repo root first.
+
+Exit codes: `0` ok · `1` error or gate blocked · `2` auth/biometric · `3` budget
+exhausted · `4` submission refused.
+
+## What this account can do
+
+`<your account id>`, `level: NONE` — the lowest tier. Consequences worth knowing before
+planning any work:
+
+- **~1 simulation slot.** Batches run near-sequentially; 40 candidates is roughly
+  an hour of wall clock. Concurrency is learned from 429s and persisted — do not
+  override it with `WQO_MAX_CONCURRENCY`.
+- **66 operators**, not the full set. Check `wqo data operators` before
+  suggesting one.
+- **`/alphas/{id}/correlations/prod` returns 403.** The `MATCHES_COMPETITION`
+  check still runs server-side, so the gate verdict is real; only the breakdown
+  is unreadable.
+- **`/users/self/consultant` returns 403.**
+
+Re-run `wqo account probe` after a level change to see what opened up.
 
 ## Commands
 

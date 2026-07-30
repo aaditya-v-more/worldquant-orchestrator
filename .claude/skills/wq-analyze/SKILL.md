@@ -5,6 +5,20 @@ description: Analyze a WorldQuant BRAIN alpha's performance — IS statistics, P
 
 # WorldQuant BRAIN — alpha analysis
 
+## Before running anything
+
+```bash
+cd /path/to/worldquant-orchestrator
+```
+
+All commands below use `.venv/bin/python -m wqo`. If `.venv` is missing, or you
+have not read the hard rules (never submit without explicit confirmation, never
+bypass the Persona biometric check, never touch the credentials file), read
+[`AGENTS.md`](../../../AGENTS.md) in the repo root first.
+
+Exit codes: `0` ok · `1` error or gate blocked · `2` auth/biometric · `3` budget
+exhausted · `4` submission refused.
+
 ## Full pre-submission report
 
 ```bash

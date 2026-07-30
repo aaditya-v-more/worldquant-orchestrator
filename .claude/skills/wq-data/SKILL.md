@@ -5,6 +5,20 @@ description: Browse WorldQuant BRAIN datasets, datafields, and operators. Use wh
 
 # WorldQuant BRAIN — data discovery
 
+## Before running anything
+
+```bash
+cd /path/to/worldquant-orchestrator
+```
+
+All commands below use `.venv/bin/python -m wqo`. If `.venv` is missing, or you
+have not read the hard rules (never submit without explicit confirmation, never
+bypass the Persona biometric check, never touch the credentials file), read
+[`AGENTS.md`](../../../AGENTS.md) in the repo root first.
+
+Exit codes: `0` ok · `1` error or gate blocked · `2` auth/biometric · `3` budget
+exhausted · `4` submission refused.
+
 Everything here is cached locally in `data/catalog.sqlite` for 7 days, so repeated
 lookups cost zero API requests. Pass `--refresh` only when the user asks for fresh
 data or a dataset was just released.
@@ -46,3 +60,20 @@ simulation and wastes a slot.
   USA/TOP3000 may not exist for EUR/TOP2500, so always pass the settings the alpha
   will actually be simulated with.
 - Add `--raw` to see the full API record when a summarized field isn't enough.
+- **`--search` is capped at 100 results** by the API (`offset + limit > 100`
+  returns `400 Invalid query`). The client stops at that ceiling rather than
+  erroring. Narrow the term or filter by `--dataset` if you need more.
+- The `pv1` dataset is the price/volume core and worth knowing by heart:
+  `open high low close vwap volume adv20 cap returns sharesout dividend split
+  adjfactor sector industry subindustry market country exchange currency`.
+
+## Picking a dataset to mine
+
+`alphaCount` is how many alphas the community has already built on it. High
+`valueScore` with low `alphaCount` is the interesting quadrant — signal that is
+not yet crowded, which matters because self-correlation and
+`MATCHES_COMPETITION` are what kill otherwise-good alphas.
+
+Next step after picking one: `wq-mine` to sweep it, or `wq-simulate` for a
+single hand-written expression. Expression syntax rules are in
+[`docs/fastexpr.md`](../../../docs/fastexpr.md).
