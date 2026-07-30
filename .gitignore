@@ -8,3 +8,6 @@ data/
 *credentials*.json
 *session*.json
 .DS_Store
+
+# generated alpha candidate batches — inputs to `sim batch`, not source
+ideas/
