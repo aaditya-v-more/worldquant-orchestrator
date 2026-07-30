@@ -11,3 +11,8 @@ data/
 
 # generated alpha candidate batches — inputs to `sim batch`, not source
 ideas/
+
+# per-user account facts (level, score, slots, which endpoints 403). Several
+# people share this repo on different accounts; committed docs must not assert
+# any of it. Regenerate with `wqo account snapshot`.
+ACCOUNT.local.md

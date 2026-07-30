@@ -12,6 +12,7 @@ See docs/api-map.md for the full probe results.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Iterator, Optional
 
 from . import endpoints
@@ -205,3 +206,106 @@ def probe(session: BrainSession, paths: Optional[tuple[str, ...]] = None) -> lis
             note = response.text[:100].replace("\n", " ")
         out.append({"path": path, "status": response.status_code, "note": note})
     return out
+
+
+# --------------------------------------------------------------------------
+# Per-user snapshot
+# --------------------------------------------------------------------------
+
+def snapshot(session: BrainSession, concurrency: Optional[int] = None) -> dict:
+    """Everything about *this* account that the committed docs must not assert.
+
+    Level, score, operator count and which endpoints are gated all differ per
+    user and change without warning. Hard-coding them in AGENTS.md sent agents
+    into the repo with another person's account facts, so they live here and
+    get written to a gitignored file instead.
+    """
+    me = session.json("GET", endpoints.USERS_SELF)
+    operators = session.json("GET", endpoints.OPERATORS)
+    reach = probe(session)
+
+    gated = [row for row in reach if row.get("status") == 403]
+    # The prod-correlation gate needs a real alpha id to observe.
+    alphas = session.json(
+        "GET", endpoints.USERS_SELF_ALPHAS, params={"limit": 1, "status": "ACTIVE"}
+    )
+    results = alphas.get("results") or []
+    if results:
+        response = session.request(
+            "GET", f"{endpoints.ALPHAS}/{results[0]['id']}/correlations/prod"
+        )
+        if response.status_code == 403:
+            gated.append(
+                {
+                    "path": "/alphas/{id}/correlations/prod",
+                    "status": 403,
+                    "note": "production correlation detail",
+                }
+            )
+
+    return {
+        "user_id": me.get("id"),
+        "level": me.get("level"),
+        "concurrency": concurrency,
+        "operator_count": len(operators) if isinstance(operators, list) else None,
+        "submitted_alphas": alphas.get("count"),
+        "competitions": standing(session)["competitions"],
+        "gated": gated,
+        "reachable": [row for row in reach if row.get("status") == 200],
+    }
+
+
+def render_snapshot(data: dict, generated: str) -> str:
+    """Render :func:`snapshot` as the markdown an agent reads on arrival."""
+    lines = [
+        "# Account snapshot (local, not committed)",
+        "",
+        f"Generated {generated} by `wqo account snapshot`. Regenerate it rather",
+        "than editing by hand — every value here is per-user and goes stale.",
+        "",
+        "| Fact | Value |",
+        "|---|---|",
+        f"| Account | `{data.get('user_id')}` |",
+        f"| Level | `{data.get('level')}` |",
+        f"| Learned concurrency | {data.get('concurrency')} simulation slot(s) |",
+        f"| Operators available | {data.get('operator_count')} |",
+        f"| Submitted alphas | {data.get('submitted_alphas')} |",
+        "",
+    ]
+
+    comps = data.get("competitions") or []
+    if comps:
+        lines += [
+            "## Standing",
+            "",
+            "| Competition | Rank | Score | Scored alphas | Level | Next level at |",
+            "|---|---|---|---|---|---|",
+        ]
+        for c in comps:
+            lines.append(
+                f"| {c.get('name')} | {c.get('rank')} | {c.get('score')} | "
+                f"{c.get('alphas')} | {c.get('level')} | {c.get('next_level_at')} |"
+            )
+        lines.append("")
+
+    lines += ["## Gated today (403)", ""]
+    gated = data.get("gated") or []
+    if gated:
+        for row in gated:
+            lines.append(f"- `{row['path']}`")
+        lines += [
+            "",
+            "Report these plainly as level gates, not bugs. `MATCHES_COMPETITION`",
+            "still runs server-side even when the correlation detail is unreadable.",
+        ]
+    else:
+        lines.append("Nothing — every probed endpoint is reachable.")
+    lines.append("")
+
+    return "\n".join(lines)
+
+
+def write_snapshot(data: dict, path: Path | str, generated: str) -> str:
+    target = Path(path)
+    target.write_text(render_snapshot(data, generated), encoding="utf-8")
+    return str(target)

@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from . import account as account_mod
@@ -88,6 +89,18 @@ def cmd_auth(args) -> int:
         emit({"status": "authenticated", "user": payload.get("user")})
         return EXIT_OK
 
+    if args.auth_command == "slots":
+        with _ledger() as ledger:
+            emit(
+                {
+                    "limit": ledger.get(
+                        "learned_concurrency", config.DEFAULT_CONCURRENCY
+                    ),
+                    **ledger.slot_queue_state(),
+                }
+            )
+        return EXIT_OK
+
     # status
     session.ensure_auth()
     me = session.whoami()
@@ -98,6 +111,7 @@ def cmd_auth(args) -> int:
                 "authenticated": True,
                 "user": me,
                 "concurrency": learned,
+                "slot_queue": ledger.slot_queue_state(),
                 "simulations_today": ledger.simulations_today(),
                 "simulation_budget": config.BUDGET.simulations_per_day,
                 "submissions_today": ledger.submissions_today(),
@@ -295,6 +309,32 @@ def cmd_alpha(args) -> int:
                 hidden=args.hidden,
             )
         )
+    elif command == "label":
+        # Mining labels (template:datafield) make far better names than
+        # anything recoverable from the expression, so pull them from the
+        # ledger for any alpha this tool simulated.
+        with _ledger() as ledger:
+            labels = {
+                row["alpha_id"]: row["label"]
+                for row in ledger.recent_simulations(limit=2000)
+                if row["alpha_id"] and row["label"]
+            }
+        rows = alphas_mod.label_all(
+            session,
+            labels=labels,
+            limit=args.limit,
+            only_anonymous=not args.relabel,
+            dry_run=args.dry_run,
+            status=args.status,
+        )
+        emit(
+            {
+                "dry_run": args.dry_run,
+                "labelled": sum(1 for r in rows if r["applied"]),
+                "considered": len(rows),
+                "alphas": rows,
+            }
+        )
     return EXIT_OK
 
 
@@ -449,6 +489,15 @@ def cmd_account(args) -> int:
         emit(account_mod.agreements(session))
     elif command == "probe":
         emit(account_mod.probe(session))
+    elif command == "snapshot":
+        with _ledger() as ledger:
+            learned = ledger.get("learned_concurrency", config.DEFAULT_CONCURRENCY)
+        data = account_mod.snapshot(session, concurrency=learned)
+        generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        path = account_mod.write_snapshot(
+            data, config.ACCOUNT_SNAPSHOT_PATH, generated
+        )
+        emit({**data, "written_to": path, "generated": generated})
     return EXIT_OK
 
 
@@ -532,6 +581,9 @@ def build_parser() -> argparse.ArgumentParser:
     auth_sub.add_parser("status", help="show account, quotas, and learned concurrency")
     auth_sub.add_parser("persona", help="finish a biometric check done in a browser")
     auth_sub.add_parser("logout", help="drop the cached session")
+    auth_sub.add_parser(
+        "slots", help="who holds a simulation slot and who is queued (all agents)"
+    )
     auth.set_defaults(func=cmd_auth)
 
     # data
@@ -597,6 +649,17 @@ def build_parser() -> argparse.ArgumentParser:
     tag.add_argument("--description")
     tag.add_argument("--favorite", action="store_true", default=None)
     tag.add_argument("--hidden", action="store_true", default=None)
+    label = alpha_sub.add_parser(
+        "label", help="name/tag/colour anonymous alphas by convention"
+    )
+    label.add_argument("--limit", type=int, default=100, help="alphas to consider")
+    label.add_argument("--status", help="UNSUBMITTED, ACTIVE, ...")
+    label.add_argument(
+        "--relabel", action="store_true", help="also overwrite alphas that have a name"
+    )
+    label.add_argument(
+        "--dry-run", action="store_true", help="print proposed labels, write nothing"
+    )
     alpha.set_defaults(func=cmd_alpha)
 
     # gate
@@ -656,6 +719,7 @@ def build_parser() -> argparse.ArgumentParser:
         ("messages", "platform notifications"),
         ("agreements", "agreements on file"),
         ("probe", "which endpoints this account level can reach"),
+        ("snapshot", "write ACCOUNT.local.md: level, slots, gates for this user"),
     ):
         acct_sub.add_parser(name, help=helptext)
     acct.set_defaults(func=cmd_account)

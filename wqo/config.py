@@ -42,6 +42,14 @@ SESSION_PATH = Path(
     _env_str("WQO_SESSION", str(Path.home() / ".brain_session.json"))
 ).expanduser()
 
+#: Per-user account snapshot: level, score, slots, which endpoints 403 today.
+#: Gitignored on purpose — several people share this repo and none of them have
+#: the same account, so these values belong nowhere near the committed docs.
+#: Regenerate with ``wqo account snapshot``.
+ACCOUNT_SNAPSHOT_PATH = Path(
+    _env_str("WQO_ACCOUNT_SNAPSHOT", str(REPO_DIR / "ACCOUNT.local.md"))
+).expanduser()
+
 DATA_DIR = Path(_env_str("WQO_DATA_DIR", str(REPO_DIR / "data"))).expanduser()
 LEDGER_PATH = DATA_DIR / "wqo.sqlite"
 CATALOG_PATH = DATA_DIR / "catalog.sqlite"
@@ -100,7 +108,14 @@ class Pacing:
 
 @dataclass
 class Budget:
-    """Local per-day caps, enforced against the ledger before acting."""
+    """Local per-day caps, enforced against the ledger before acting.
+
+    "Day" means BRAIN's day — midnight US Eastern, see ``store._brain_day_start``.
+    These count only work done through this tool; the server's own counters at
+    ``/users/self/activities/*`` are authoritative. Separately, the Challenge
+    score caps at 2,000 points/day on a *different* boundary (03:00 Eastern);
+    ``docs/scoring.md`` has the detail.
+    """
 
     simulations_per_day: int = field(
         default_factory=lambda: _env_int("WQO_SIM_BUDGET", 300)
