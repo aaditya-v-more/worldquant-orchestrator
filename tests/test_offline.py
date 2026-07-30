@@ -490,7 +490,53 @@ def test_vector_templates_only_offered_for_vector_fields():
     assert "cs_rank" in matrix and "cs_rank" not in vector
 
 
-def sim_result(sharpe, fitness=1.2, turnover=0.25, checks=None):
+# -- 151 Trading Strategies template expansion counts -----------------------
+
+
+def test_new_template_expansion_counts():
+    """Each multi-knob template must expand to exactly len(knob1) × len(knob2) × … expressions."""
+    import math
+
+    for template in templates.TEMPLATES:
+        exprs = list(template.expand("close"))
+        if template.knobs:
+            expected = math.prod(len(v) for v in template.knobs.values())
+        else:
+            expected = 1
+        assert len(exprs) == expected, (
+            f"{template.name}: expected {expected} expansions, got {len(exprs)}"
+        )
+
+
+def test_new_templates_produce_valid_expressions():
+    """Expanded expressions must not contain unresolved {placeholders}."""
+    for template in templates.TEMPLATES:
+        for expr in template.expand("revenue"):
+            assert "{" not in expr and "}" not in expr, (
+                f"{template.name}: unresolved placeholder in {expr!r}"
+            )
+
+
+def test_new_templates_declare_operators():
+    """Every template must declare at least one operator for account-level gating."""
+    for template in templates.TEMPLATES:
+        assert len(template.operators) > 0, f"{template.name} declares no operators"
+
+
+def test_151_templates_present():
+    """All 12 templates from the 151 Strategies PR must exist."""
+    names = {t.name for t in templates.TEMPLATES}
+    expected = {
+        "dual_momentum", "low_volatility", "residual_momentum",
+        "ma_distance_zscore", "channel_position", "exp_decay_momentum",
+        "volume_gated_reversal", "multifactor_level_change",
+        "vol_scaled_reversal", "ma_crossover", "value_momentum_combo",
+        "days_since_extreme",
+    }
+    assert expected <= names, f"missing: {expected - names}"
+
+
+def sim_result(sharpe, fitness=1.2, turnover=0.25, checks=None, drawdown=0.05, returns=0.15):
     return SimResult(
         code="rank(close)",
         settings={},
@@ -502,6 +548,8 @@ def sim_result(sharpe, fitness=1.2, turnover=0.25, checks=None):
                 "sharpe": sharpe,
                 "fitness": fitness,
                 "turnover": turnover,
+                "drawdown": drawdown,
+                "returns": returns,
                 "checks": checks or [],
             },
         },
@@ -521,6 +569,37 @@ def test_score_penalises_turnover_overshoot():
 def test_failed_simulations_score_lowest():
     failed = SimResult(code="x", settings={}, status="ERROR", error="boom")
     assert rank.score(failed).score == float("-inf")
+
+
+def test_score_penalises_drawdown_overshoot():
+    """Drawdown exceeding the threshold must reduce the score proportionally."""
+    clean = rank.score(sim_result(1.5, drawdown=0.05)).score
+    risky = rank.score(sim_result(1.5, drawdown=0.20)).score
+    assert risky < clean
+    # Penalty is bounded: even extreme drawdown should not go below -inf
+    extreme = rank.score(sim_result(1.5, drawdown=0.90)).score
+    assert extreme > float("-inf")
+    assert extreme < risky
+
+
+def test_score_rewards_returns():
+    """Higher returns should boost the score (capped at +1.0)."""
+    low_ret = rank.score(sim_result(1.5, returns=0.05)).score
+    high_ret = rank.score(sim_result(1.5, returns=0.40)).score
+    assert high_ret > low_ret
+    # Bonus is capped: returns=0.5 and returns=1.0 give the same bonus
+    capped_a = rank.score(sim_result(1.5, returns=0.5)).score
+    capped_b = rank.score(sim_result(1.5, returns=1.0)).score
+    assert capped_a == pytest.approx(capped_b)
+
+
+def test_score_drawdown_penalty_is_bounded():
+    """The drawdown penalty must not exceed -3.0 (1.5 * min(overshoot, 2.0))."""
+    base = rank.score(sim_result(1.5, drawdown=0.05)).score
+    worst = rank.score(sim_result(1.5, drawdown=1.0)).score
+    # The difference from drawdown alone should be at most 3.0
+    # (other factors like returns are constant between the two calls)
+    assert base - worst <= 3.0 + 0.01  # small float tolerance
 
 
 def test_shortlist_drops_failing_and_weak_candidates():
