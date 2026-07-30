@@ -21,20 +21,41 @@ exhausted · `4` submission refused.
 
 ## What this account can do
 
-`<your account id>`, `level: NONE` — the lowest tier. Consequences worth knowing before
-planning any work:
+Several people share this repo on different BRAIN accounts, so nothing here
+states a level, slot count, or score. Read the gitignored snapshot:
 
-- **~1 simulation slot.** Batches run near-sequentially; 40 candidates is roughly
-  an hour of wall clock. Concurrency is learned from 429s and persisted — do not
-  override it with `WQO_MAX_CONCURRENCY`.
-- **66 operators**, not the full set. Check `wqo data operators` before
-  suggesting one.
-- **`/alphas/{id}/correlations/prod` returns 403.** The `MATCHES_COMPETITION`
-  check still runs server-side, so the gate verdict is real; only the breakdown
-  is unreadable.
-- **`/users/self/consultant` returns 403.**
+```bash
+.venv/bin/python -m wqo account snapshot   # then read ACCOUNT.local.md
+```
 
-Re-run `wqo account probe` after a level change to see what opened up.
+It reports account id, level, learned concurrency, operator count, standing,
+and which endpoints 403 today. Regenerate it if it is missing or stale rather
+than assuming last session's numbers still hold.
+
+True on every low-tier account:
+
+- **Few simulation slots.** Batches run near-sequentially; 40 candidates is
+  roughly an hour of wall clock. Concurrency is learned from 429s and
+  persisted — do not override it with `WQO_MAX_CONCURRENCY`.
+- **Partial operator set.** Check `wqo data operators` before suggesting one.
+- **Some endpoints 403 by level**, typically `/users/self/consultant` and
+  `/alphas/{id}/correlations/prod`. The `MATCHES_COMPETITION` check still runs
+  server-side, so the gate verdict is real; only the breakdown is unreadable.
+
+## Quotas roll on BRAIN's clock, not yours
+
+BRAIN runs on US Eastern (UTC−4 summer / −5 winter). Simulation and submission
+quotas roll at **midnight Eastern**; the Challenge score refreshes at **03:00
+Eastern** with a 2,000-point daily cap. Detail in `docs/scoring.md`.
+
+`auth status` reports `simulations_today` / `submissions_today` from the local
+SQLite ledger, which only records work done through this tool. Anything
+submitted from the website is invisible to it. When the number matters, check
+the server:
+
+```bash
+.venv/bin/python -m wqo api GET /users/self/activities/submissions
+```
 
 ## Commands
 

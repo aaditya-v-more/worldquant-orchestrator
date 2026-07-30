@@ -1,10 +1,13 @@
 # API reachability map
 
-Every website tab probed against the API from account `<your account id>` (`level: NONE`),
-2026-07-30. Re-run the probe yourself with:
+Every website tab probed against the API from a low-tier individual account,
+2026-07-30. **Which endpoints answer depends on your account level**, so treat
+the statuses below as the shape of the API, not as facts about your account.
+Probe your own:
 
 ```bash
-.venv/bin/python -m wqo account probe
+.venv/bin/python -m wqo account probe      # raw per-endpoint statuses
+.venv/bin/python -m wqo account snapshot   # writes ACCOUNT.local.md
 ```
 
 ## Tab → endpoint
@@ -46,12 +49,25 @@ platform's product; exposing other users' expressions would defeat the model.
 inside each of *your* competition records:
 
 ```json
-{ "rank": 246107, "user": "<your account id>", "score": 0.0, "alphas": 0,
-  "level": null, "university": "<your university>", "country": "IN" }
+{ "rank": 29151, "user": "<your id>", "score": 1950.0, "alphas": 1,
+  "level": "BRONZE", "university": "...", "country": "..." }
 ```
 
 Your position among everyone — never who is above you or what they wrote.
 `wqo account status` reads this.
+
+`alphas` counts alphas that have actually been *scored*, not alphas submitted.
+A submission stays out of this count until the next 03:00 Eastern score
+refresh — see `docs/scoring.md`. Nothing in the API states the refresh time or
+the 2,000-point daily cap; both come from WorldQuant's published rules.
+
+## Daily counters
+
+`/users/self/activities/{submissions,simulations,referrals}` return period
+buckets plus `records.records`, a list of `[date, count]` pairs keyed on
+**Eastern calendar dates**. This is the authoritative usage record — the local
+SQLite ledger only sees work done through this tool, so it undercounts anything
+submitted from the website.
 
 ## Other 404s (probed, not available)
 

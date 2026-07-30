@@ -54,7 +54,19 @@ submission in the local ledger.
 - Gate not clean: refuses even with `--confirm`. `--force` overrides this, but
   only use it when the user has seen the failing checks and asked for it anyway.
 - Daily submission budget (default 3, `WQO_SUBMIT_BUDGET`): exit 3. Stop and tell
-  the user; do not raise the cap on your own.
+  the user; do not raise the cap on your own. The budget rolls at **midnight US
+  Eastern**, and the local ledger only counts submissions made through this
+  tool — verify against
+  `wqo api GET /users/self/activities/submissions` before telling the user how
+  many slots are left.
+
+## Timing
+
+Challenge scores refresh at **03:00 US Eastern**, capped at 2,000 points per
+day. An alpha submitted after 03:00 does not score until the next morning's
+refresh. Submitting between 00:00 and 03:00 Eastern is the worst window: it
+spends a slot from the new day's quota and still waits a full cycle to score.
+See `docs/scoring.md`.
 
 ## Reporting back
 

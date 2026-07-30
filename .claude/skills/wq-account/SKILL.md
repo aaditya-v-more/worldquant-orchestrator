@@ -28,7 +28,22 @@ exhausted · `4` submission refused.
 Returns rank, score, alphas counted, current level, and points remaining to the
 next level, per competition you have joined.
 
-Level thresholds: Bronze 1,000 · Silver 5,000 · Gold 10,000 points.
+Level thresholds: Bronze 1,000 · Silver 5,000 · Gold 10,000 points. Score is
+cumulative toward level — it does not reset. Only the accrual rate is capped.
+
+`alphas` counts alphas that have been *scored*, not submitted. A fresh
+submission stays out of it until the next score refresh.
+
+## Scoring cadence
+
+- Challenge score earns at most **2,000 points per day**.
+- Scores refresh at **03:00 US Eastern**, so an alpha submitted after 03:00
+  waits for the next morning's refresh.
+- Submission and simulation quotas roll separately, at **midnight Eastern**.
+
+Neither the cap nor the refresh time is exposed by any endpoint — they come
+from WorldQuant's published Challenge rules. Don't claim the API confirms them.
+Worked example and sources: `docs/scoring.md`.
 
 ## Competitions
 
@@ -52,7 +67,13 @@ a region/university restriction, not an error.
 .venv/bin/python -m wqo account messages
 .venv/bin/python -m wqo account agreements
 .venv/bin/python -m wqo account probe        # what this account level can reach
+.venv/bin/python -m wqo account snapshot     # write ACCOUNT.local.md
 ```
+
+`account snapshot` writes a gitignored `ACCOUNT.local.md` holding level,
+learned concurrency, operator count, standing, and today's 403s. Read that
+instead of trusting any account fact written into a committed doc — this repo
+is shared across accounts.
 
 `account activity` is the Refer a friend tab plus period-bucketed simulation and
 submission counters (yesterday, month to date, previous month, year to date).

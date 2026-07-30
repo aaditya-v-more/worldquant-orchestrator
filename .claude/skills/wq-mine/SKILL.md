@@ -62,6 +62,23 @@ new ground instead of re-testing the same ideas.
    good idea beats generating more random ones.
 6. **Gate them** with `wq-analyze`, then hand to `wq-submit` — which will ask the
    user before anything is submitted.
+7. **Label the new alphas** so they are not anonymous rows in the dashboard:
+   `wqo alpha label`. See `wq-alphas`.
+
+## You may be sharing the account
+
+Several agents can be working this repo at once, and BRAIN counts simulation
+slots per account. Mining takes tickets in a shared queue rather than firing at
+the slot and collecting 429s, so a batch can legitimately sit idle waiting for
+another agent to finish:
+
+```bash
+.venv/bin/python -m wqo auth slots
+```
+
+If `waiting` has your process in it, the batch is queued, not stuck. Report that
+rather than retrying, and never raise `WQO_MAX_CONCURRENCY` to jump the line.
+Details in `docs/parallel-agents.md`.
 
 ## Templates
 

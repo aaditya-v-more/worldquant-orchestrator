@@ -157,6 +157,14 @@ conflicts with BRAIN's own `/check`, BRAIN wins.
 plus what is *not* available. Notably there is no leaderboard endpoint and
 `GET /alphas` is 405: you can read your own rank, never other people's alphas.
 
+[`docs/scoring.md`](docs/scoring.md) — how Challenge points are earned, the
+2,000-point daily cap, level thresholds, and the two different reset times.
+BRAIN runs on US Eastern: quotas roll at midnight, scores refresh at 03:00.
+
+[`docs/parallel-agents.md`](docs/parallel-agents.md) — several agents share one
+account, so they share one simulation slot queue in `data/wqo.sqlite`. Check it
+with `wqo auth slots` before assuming a stalled batch is broken.
+
 ## Layout
 
 ```
@@ -164,6 +172,8 @@ docs/
   alpha-research.md   distilled research reference
   api-map.md          tab -> endpoint map, and what is unavailable
   fastexpr.md         expression syntax and operator availability
+  scoring.md          points, daily caps, reset times, level thresholds
+  parallel-agents.md  shared slot queue for several agents on one account
 wqo/
   endpoints.py    API URLs
   config.py       paths, pacing, budgets, gate thresholds

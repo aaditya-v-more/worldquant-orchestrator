@@ -59,19 +59,58 @@ many failed. If nothing clears the gate, say so rather than widening thresholds.
 
 ---
 
-## Account facts
+## Account facts live in `ACCOUNT.local.md`, not here
 
-Current account is `<your account id>`, `level: NONE` — the lowest tier. This shapes
-everything:
+Several people work in this repo on different BRAIN accounts. Level, score,
+slot count, operator count and which endpoints 403 all differ per user and
+change without warning, so **this file asserts none of them**. Read the
+gitignored snapshot instead:
+
+```bash
+.venv/bin/python -m wqo account snapshot   # regenerate, then read ACCOUNT.local.md
+```
+
+If `ACCOUNT.local.md` is missing or older than a few days, regenerate it before
+planning work. Never commit it and never copy its numbers into a tracked file.
+
+What is true for every account here:
 
 | Constraint | Consequence |
 |---|---|
-| ~1 simulation slot | Batches run near-sequentially. 40 candidates is roughly an hour |
-| 66 operators available | Not the full set. Check `wqo data operators` before suggesting one |
-| `/alphas/{id}/correlations/prod` → 403 | Production correlation detail unreadable; the `MATCHES_COMPETITION` check still runs server-side |
-| `/users/self/consultant` → 403 | Consultant surface closed |
+| Few simulation slots | Batches run near-sequentially. Check the snapshot for the learned count |
+| Partial operator set | Not every documented operator exists. Check `wqo data operators` before suggesting one |
+| Some endpoints 403 | Level gates, not bugs. The snapshot lists which ones today |
 
 Concurrency is learned automatically from 429s and persisted. Do not override it.
+
+### You are probably not the only agent running
+
+BRAIN counts slots and budgets per *account*, so several agents in this repo
+share one waiting line, held in `data/wqo.sqlite`. `SlotManager` takes a ticket
+and blocks until granted; grants go in ticket order and dead holders are reaped
+after 180 s.
+
+```bash
+.venv/bin/python -m wqo auth slots     # who holds a slot, who is queued
+```
+
+A batch that seems stalled is usually waiting behind another agent, not broken.
+Check the queue before diagnosing anything else, and never work around it by
+raising `WQO_MAX_CONCURRENCY`. Details in `docs/parallel-agents.md`.
+
+### Daily limits roll at two different times
+
+BRAIN runs on US Eastern (UTC−4 summer / −5 winter), not UTC or local time.
+
+- **Submissions (3/day) and simulations (300/day)** roll at **midnight Eastern**.
+- **Challenge score (max 2,000 points/day)** refreshes at **03:00 Eastern**.
+
+An alpha submitted between 00:00 and 03:00 Eastern spends a slot from the new
+day's quota and still waits a full cycle to score. Full detail, worked example,
+and sources in `docs/scoring.md`.
+
+The local ledger only sees submissions made through this tool. When it and
+`/users/self/activities/submissions` disagree, the server is right.
 
 ---
 
@@ -97,7 +136,7 @@ wq-auth      →  confirm session, quotas, level
 wq-data      →  find datasets and datafields
 wq-mine      →  generate + backtest candidates       (or wq-simulate for one)
 wq-analyze   →  gate report, diagnose failures
-wq-alphas    →  tag and organize survivors
+wq-alphas    →  label survivors (`alpha label`), tag and organize
 wq-submit    →  report, ask the user, then submit
 wq-account   →  rank, competitions, events, standing
 ```
@@ -143,6 +182,9 @@ Anything not wrapped by a command is still reachable:
 | `docs/alpha-research.md` | Passing criteria, fitness formula, proven patterns, symptom → fix |
 | `docs/api-map.md` | Every tab mapped to its endpoint; what 404s and 403s |
 | `docs/fastexpr.md` | Expression syntax constraints and operator availability |
+| `docs/scoring.md` | Challenge scoring, the 2,000/day cap, quota reset times, level thresholds |
+| `docs/parallel-agents.md` | Shared slot queue, what is and is not coordinated between agents |
+| `ACCOUNT.local.md` | **Gitignored.** This user's level, slots, standing, 403s. `wqo account snapshot` |
 | `wqo/config.py` | All tunables and gate thresholds |
 
 ## Tests

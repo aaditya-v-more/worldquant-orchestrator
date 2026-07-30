@@ -23,7 +23,8 @@ Valid values: `subindustry`, `industry`, `sector`, `market`.
 
 ## Operator availability depends on account level
 
-This account (`level: NONE`) has 66 operators. That is not the full set — some
+A low-tier account has roughly 66 operators, and the count does not change on
+the promotion from `NONE` to `BRONZE`. That is not the full set — some
 documented operators simply are not there, and using one fails the simulation
 and burns a slot. Check first:
 
