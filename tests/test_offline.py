@@ -15,6 +15,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from wqo import alphas as alphas_mod  # noqa: E402
 from wqo import config, gate  # noqa: E402
 from wqo.config import GateThresholds, Pacing  # noqa: E402
 from wqo.mining import generator, rank, templates  # noqa: E402
@@ -138,6 +139,235 @@ def test_submission_budget_blocks_at_cap(ledger, monkeypatch):
 def test_failed_submissions_do_not_consume_budget(ledger):
     ledger.record_submission("AL1", "FAILED", {"detail": "nope"})
     assert ledger.submissions_today() == 0
+
+
+def test_daily_budget_rolls_on_eastern_midnight_not_utc():
+    # Shipped once counting on UTC midnight, which reports a fresh budget four
+    # or five hours before BRAIN's own day actually turns over.
+    from datetime import datetime, timezone
+
+    from wqo.store import _brain_day_start
+
+    def day_start_utc(iso: str) -> datetime:
+        ts = datetime.fromisoformat(iso).timestamp()
+        return datetime.fromtimestamp(_brain_day_start(ts), tz=timezone.utc)
+
+    # Summer (EDT, UTC-4): 03:00 UTC is still the previous Eastern day.
+    assert day_start_utc("2026-07-30T03:00:00+00:00") == datetime(
+        2026, 7, 29, 4, 0, tzinfo=timezone.utc
+    )
+    assert day_start_utc("2026-07-30T05:00:00+00:00") == datetime(
+        2026, 7, 30, 4, 0, tzinfo=timezone.utc
+    )
+    # Winter (EST, UTC-5): the boundary shifts an hour later in UTC.
+    assert day_start_utc("2026-01-15T18:00:00+00:00") == datetime(
+        2026, 1, 15, 5, 0, tzinfo=timezone.utc
+    )
+
+
+def test_slot_queue_is_shared_between_processes(tmp_path):
+    # Two Ledger objects on one file stand in for two agents running `wqo` at
+    # once. Before the shared queue each had its own in-memory SlotManager,
+    # both believed they held the account's only slot, and the second POST 429'd.
+    path = tmp_path / "shared.sqlite"
+    with Ledger(path) as agent_a, Ledger(path) as agent_b:
+        first = agent_a.enqueue_slot("agent-a")
+        second = agent_b.enqueue_slot("agent-b")
+
+        assert agent_a.try_grant_slot(first, limit=1) is True
+        assert agent_b.try_grant_slot(second, limit=1) is False, "one slot, one holder"
+
+        state = agent_b.slot_queue_state()
+        assert [h["owner"] for h in state["holding"]] == ["agent-a"]
+        assert [w["owner"] for w in state["waiting"]] == ["agent-b"]
+
+        agent_a.release_slot(first)
+        assert agent_b.try_grant_slot(second, limit=1) is True
+
+
+def test_slot_queue_grants_in_ticket_order(tmp_path):
+    # Without the "nobody ahead of me" rule a mining batch polling in a tight
+    # loop would keep winning the slot and starve a waiting interactive run.
+    path = tmp_path / "fifo.sqlite"
+    with Ledger(path) as led:
+        early = led.enqueue_slot("early")
+        late = led.enqueue_slot("late")
+
+        assert led.try_grant_slot(late, limit=1) is False, "must not jump the queue"
+        assert led.try_grant_slot(early, limit=1) is True
+
+
+def test_slot_queue_reaps_dead_holders(tmp_path):
+    # A killed agent must not hold the account's only slot forever.
+    path = tmp_path / "reap.sqlite"
+    with Ledger(path) as led:
+        dead = led.enqueue_slot("crashed")
+        assert led.try_grant_slot(dead, limit=1) is True
+
+        alive = led.enqueue_slot("healthy")
+        assert led.try_grant_slot(alive, limit=1) is False
+
+        # The crashed agent stops heartbeating; age its row past the reaper.
+        led.conn.execute(
+            "UPDATE slot_queue SET heartbeat_at = ? WHERE ticket = ?",
+            (time.time() - 10_000, dead),
+        )
+        assert led.try_grant_slot(alive, limit=1) is True
+        assert led.slot_ticket_alive(dead) is False
+
+
+def test_slot_queue_lets_two_run_when_limit_allows(tmp_path):
+    path = tmp_path / "two.sqlite"
+    with Ledger(path) as led:
+        a, b, c = (led.enqueue_slot(f"agent-{i}") for i in range(3))
+        assert led.try_grant_slot(a, limit=2) is True
+        assert led.try_grant_slot(b, limit=2) is True
+        assert led.try_grant_slot(c, limit=2) is False
+
+
+def _slot_agent(db_path, name, out):  # runs in a separate process
+    from wqo.store import Ledger as L
+
+    led = L(db_path)
+    for i in range(2):
+        ticket = led.enqueue_slot(name, label=f"job{i}")
+        while not led.try_grant_slot(ticket, limit=1):
+            time.sleep(0.02)
+        out.put(("held", len(led.slot_queue_state()["holding"])))
+        time.sleep(0.05)
+        led.release_slot(ticket)
+    led.close()
+
+
+def test_slot_queue_holds_under_real_processes(tmp_path):
+    # The two-Ledger tests above exercise the SQL; only real processes catch
+    # the startup race, where two agents opening the ledger at the same instant
+    # both tried to switch it into WAL and one died on "database is locked".
+    import multiprocessing as mp
+
+    db = str(tmp_path / "procs.sqlite")
+    queue = mp.Queue()
+    procs = [
+        mp.Process(target=_slot_agent, args=(db, f"agent-{n}", queue))
+        for n in range(3)
+    ]
+    for proc in procs:
+        proc.start()
+    for proc in procs:
+        proc.join(timeout=30)
+
+    observed = []
+    while not queue.empty():
+        observed.append(queue.get()[1])
+
+    assert [p.exitcode for p in procs] == [0, 0, 0], "an agent crashed on startup"
+    assert len(observed) == 6, "every job must eventually get the slot"
+    assert max(observed) == 1, f"slot limit violated: {observed}"
+
+
+def _alpha_record(**overrides):
+    record = {
+        "id": "AL1",
+        "name": None,
+        "settings": {
+            "region": "USA",
+            "universe": "TOP3000",
+            "delay": 1,
+            "neutralization": "SUBINDUSTRY",
+            "decay": 12,
+            "truncation": 0.03,
+        },
+        "regular": {"code": "pv = ts_rank(ts_backfill(eps_mean, 60) / close, 66); pv"},
+        "is": {
+            "sharpe": 1.68,
+            "fitness": 1.3,
+            "turnover": 0.083,
+            "returns": 0.075,
+            "drawdown": 0.055,
+            "checks": [{"name": "LOW_SHARPE", "result": "PASS"}],
+        },
+    }
+    record.update(overrides)
+    return record
+
+
+def test_datafields_ignores_operators_and_locals():
+    code = "pv = ts_rank(ts_backfill(eps_mean, 60) / close, 66); group_rank(pv, sector)"
+    # ts_rank/ts_backfill/group_rank are calls, pv is assigned, sector is a
+    # group argument — only the two real datafields should survive.
+    assert alphas_mod.datafields_in(code) == ["eps_mean", "close"]
+
+
+def test_describe_is_deterministic_and_uses_the_mining_label():
+    alpha = _alpha_record()
+    first = alphas_mod.describe(alpha, label="eps_to_price:eps_mean")
+    second = alphas_mod.describe(alpha, label="eps_to_price:eps_mean")
+    assert first == second, "labels must be reproducible, not time-dependent"
+    assert first["name"] == "USA/TOP3000 D1 · eps_to_price:eps_mean · Sh1.68 Fit1.30"
+    assert "tpl-eps_to_price" in first["tags"]
+    assert first["tags"][0] == alphas_mod.TOOL_TAG
+    assert first["color"] == alphas_mod.COLOR_PASS
+
+
+def test_describe_colours_by_failing_check_count():
+    def color_for(*results):
+        checks = [{"name": f"C{i}", "result": r} for i, r in enumerate(results)]
+        alpha = _alpha_record(**{"is": {"sharpe": 1.0, "checks": checks}})
+        return alphas_mod.describe(alpha)["color"]
+
+    assert color_for("PASS", "PASS") == alphas_mod.COLOR_PASS
+    assert color_for("FAIL", "PASS") == alphas_mod.COLOR_BORDERLINE
+    assert color_for("FAIL", "FAIL") == alphas_mod.COLOR_FAIL
+    # No checks at all is unknown, not a pass.
+    assert alphas_mod.describe(_alpha_record(**{"is": {}}))["color"] == (
+        alphas_mod.COLOR_BORDERLINE
+    )
+
+
+def test_needs_labels_only_flags_anonymous_alphas():
+    assert alphas_mod.needs_labels(_alpha_record()) is True
+    assert alphas_mod.needs_labels(_alpha_record(name="   ")) is True
+    assert alphas_mod.needs_labels(_alpha_record(name="mine")) is False
+
+
+def test_describe_survives_a_bare_expression_with_no_stats():
+    # Alphas simulated outside this tool arrive with no label and no is block.
+    alpha = _alpha_record(regular={"code": "rank(close)"}, **{"is": {}})
+    described = alphas_mod.describe(alpha)
+    assert described["name"].endswith("close · Sh? Fit?")
+    assert "close" in described["tags"]
+
+
+def test_account_snapshot_renders_without_leaking_into_tracked_docs(tmp_path):
+    from wqo import account as account_mod
+
+    data = {
+        "user_id": "AM00001",
+        "level": "BRONZE",
+        "concurrency": 1,
+        "operator_count": 66,
+        "submitted_alphas": 2,
+        "competitions": [
+            {
+                "name": "Challenge",
+                "rank": 29151,
+                "score": 1950.0,
+                "alphas": 1,
+                "level": "SILVER",
+                "next_level_at": 5000.0,
+            }
+        ],
+        "gated": [{"path": "/users/self/consultant", "status": 403}],
+    }
+    target = tmp_path / "ACCOUNT.local.md"
+    account_mod.write_snapshot(data, target, "2026-07-30 19:37 UTC")
+    text = target.read_text()
+
+    assert "AM00001" in text and "BRONZE" in text
+    assert "/users/self/consultant" in text
+    assert "29151" in text
+    # The default location must stay gitignored — this file is per-user.
+    assert config.ACCOUNT_SNAPSHOT_PATH.name == "ACCOUNT.local.md"
 
 
 def test_kv_roundtrip(ledger):
