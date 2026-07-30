@@ -124,6 +124,29 @@ USER_AGENT = _env_str(
 # --------------------------------------------------------------------------
 # Simulation defaults
 # --------------------------------------------------------------------------
+# Parameter guidance from *151 Trading Strategies* (Kakushadze & Serur, 2018):
+#
+# decay:
+#   - Momentum / trend-following (§3.1, §10.4): 8–12. Higher decay smooths
+#     the signal and reduces turnover, which helps fitness.
+#   - Mean-reversion / contrarian (§3.9, §10.3): 3–5. The signal is
+#     inherently short-lived; over-smoothing destroys it.
+#   - Fundamental / value (§3.3): 6–10. Fundamentals update quarterly,
+#     so the signal is slow-moving by nature.
+#
+# neutralization:
+#   - SUBINDUSTRY: tightest; isolates stock-specific alpha. Best for
+#     mean-reversion and pairs-style signals (§3.8, §3.9).
+#   - INDUSTRY: moderate; good for multifactor / value (§3.6).
+#   - MARKET: loosest; lets sector rotation through. Best for momentum
+#     and trend-following (§3.1, §4.1 sector rotation).
+#
+# truncation:
+#   - 0.05: conservative; reduces CONCENTRATED_WEIGHT failures for
+#     high-turnover or sparse-data signals.
+#   - 0.08: default balanced setting.
+#   - 0.10: aggressive; allows stronger bets, suitable for slow-moving
+#     fundamental signals with good coverage.
 
 DEFAULT_SETTINGS: dict = {
     "instrumentType": "EQUITY",
