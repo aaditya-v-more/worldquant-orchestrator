@@ -15,9 +15,9 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from wqo import gate  # noqa: E402
+from wqo import config, gate  # noqa: E402
 from wqo.config import GateThresholds, Pacing  # noqa: E402
-from wqo.mining import rank, templates  # noqa: E402
+from wqo.mining import generator, rank, templates  # noqa: E402
 from wqo.pacing import RateGovernor, is_retryable  # noqa: E402
 from wqo.simulate import SimResult, SlotManager, build_settings  # noqa: E402
 from wqo.store import BudgetExceeded, Ledger, check_submission_budget  # noqa: E402
@@ -490,7 +490,120 @@ def test_vector_templates_only_offered_for_vector_fields():
     assert "cs_rank" in matrix and "cs_rank" not in vector
 
 
-def sim_result(sharpe, fitness=1.2, turnover=0.25, checks=None):
+# -- 151 Trading Strategies templates ---------------------------------------
+
+
+def test_template_expansions_are_distinct():
+    """Every knob combination must reach the expression.
+
+    Counting expansions against the size of the knob grid only restates what
+    ``expand`` does. What can actually break is a knob that is declared but
+    never interpolated, or two knobs sharing a placeholder: both collapse
+    distinct combinations onto duplicate expressions, silently spending
+    simulation slots on the same candidate twice.
+    """
+    for template in templates.TEMPLATES:
+        exprs = list(template.expand("close"))
+        assert len(exprs) == len(set(exprs)), (
+            f"{template.name}: duplicate expansions, a knob is unused in expr"
+        )
+
+
+def test_template_knobs_all_appear_in_expression():
+    for template in templates.TEMPLATES:
+        for knob in template.knobs:
+            assert "{%s}" % knob in template.expr, (
+                f"{template.name}: knob {knob!r} declared but not used"
+            )
+
+
+def test_new_templates_produce_valid_expressions():
+    """Expanded expressions must not contain unresolved {placeholders}."""
+    for template in templates.TEMPLATES:
+        for expr in template.expand("revenue"):
+            assert "{" not in expr and "}" not in expr, (
+                f"{template.name}: unresolved placeholder in {expr!r}"
+            )
+
+
+def test_new_templates_declare_operators():
+    """Every template must declare at least one operator for account-level gating."""
+    for template in templates.TEMPLATES:
+        assert len(template.operators) > 0, f"{template.name} declares no operators"
+
+
+def test_151_templates_present():
+    """All 12 templates from the 151 Strategies PR must exist."""
+    names = {t.name for t in templates.TEMPLATES}
+    expected = {
+        "dual_momentum", "low_volatility", "residual_momentum",
+        "ma_distance_zscore", "channel_position", "exp_decay_momentum",
+        "volume_gated_reversal", "multifactor_level_change",
+        "vol_scaled_reversal", "ma_crossover", "value_momentum_combo",
+        "days_since_extreme",
+    }
+    assert expected <= names, f"missing: {expected - names}"
+
+
+def test_every_template_regime_is_defined():
+    """A typo in a regime name must not silently fall back to balanced."""
+    for template in templates.TEMPLATES:
+        assert template.regime in config.REGIMES, (
+            f"{template.name}: unknown regime {template.regime!r}"
+        )
+
+
+class FakeCatalog:
+    """Minimal stand-in for Catalog: one well-covered matrix field, all operators."""
+
+    def fields(self, **_kwargs):
+        return [{"id": "close", "type": "MATRIX", "coverage": 1.0}]
+
+    def operators(self):
+        ops = {op for t in templates.TEMPLATES for op in t.operators}
+        # templates_for adds ts_backfill to the requirements of any backfilled
+        # template; without it every template filters out and generate()
+        # returns nothing, which would make these tests pass vacuously.
+        ops.add("ts_backfill")
+        return [{"name": name} for name in ops]
+
+
+def _jobs(**spec_kwargs):
+    spec = generator.GenerationSpec(budget=10_000, seed=0, **spec_kwargs)
+    jobs = generator.generate(FakeCatalog(), spec)
+    assert jobs, "fixture produced no jobs; the assertions below would be vacuous"
+    return jobs
+
+
+def test_generate_costs_one_slot_per_expression_by_default():
+    """No settings sweep means job count equals distinct expression count.
+
+    The budget truncates the job list, so sweeping every expression across N
+    variants would cut the number of distinct expressions actually simulated
+    by N — on a one-slot account that trades search breadth for redundancy.
+    """
+    jobs = _jobs()
+    assert len(jobs) == len({j.code for j in jobs})
+
+
+def test_generate_applies_the_regime_declared_by_the_template():
+    by_name = {t.name: t for t in templates.TEMPLATES}
+    for job in _jobs():
+        template_name = job.label.split(":", 1)[0]
+        expected = config.REGIMES[by_name[template_name].regime]
+        for key, value in expected.items():
+            assert job.settings[key] == value, f"{job.label}: {key} is {job.settings[key]}"
+
+
+def test_explicit_variants_still_sweep_every_expression():
+    """Callers that want a settings sweep keep it by passing variants."""
+    variants = ({"decay": 2}, {"decay": 20})
+    jobs = _jobs(variants=variants)
+    assert len(jobs) == 2 * len({j.code for j in jobs})
+    assert {j.settings["decay"] for j in jobs} == {2, 20}
+
+
+def sim_result(sharpe, fitness=1.2, turnover=0.25, checks=None, drawdown=0.05, returns=0.15):
     return SimResult(
         code="rank(close)",
         settings={},
@@ -502,6 +615,8 @@ def sim_result(sharpe, fitness=1.2, turnover=0.25, checks=None):
                 "sharpe": sharpe,
                 "fitness": fitness,
                 "turnover": turnover,
+                "drawdown": drawdown,
+                "returns": returns,
                 "checks": checks or [],
             },
         },
@@ -521,6 +636,53 @@ def test_score_penalises_turnover_overshoot():
 def test_failed_simulations_score_lowest():
     failed = SimResult(code="x", settings={}, status="ERROR", error="boom")
     assert rank.score(failed).score == float("-inf")
+
+
+def test_score_penalises_drawdown_overshoot():
+    """Drawdown exceeding the threshold must reduce the score proportionally."""
+    clean = rank.score(sim_result(1.5, drawdown=0.05)).score
+    risky = rank.score(sim_result(1.5, drawdown=0.20)).score
+    assert risky < clean
+    # Penalty is bounded: even extreme drawdown should not go below -inf
+    extreme = rank.score(sim_result(1.5, drawdown=0.90)).score
+    assert extreme > float("-inf")
+    assert extreme < risky
+
+
+def test_score_ignores_returns():
+    """Returns must not move the score on its own.
+
+    It already enters through fitness, and rewarding it again would refund
+    part of the drawdown penalty to the highest-drawdown candidates, which
+    tend to be the highest-returns ones.
+    """
+    low_ret = rank.score(sim_result(1.5, returns=0.05)).score
+    high_ret = rank.score(sim_result(1.5, returns=0.40)).score
+    assert low_ret == pytest.approx(high_ret)
+
+
+def test_shortlist_drops_alphas_over_the_drawdown_limit():
+    """A deep-drawdown alpha is a certain gate failure, so it never shortlists."""
+    deep = sim_result(2.6, fitness=1.9, drawdown=0.26)
+    clean = sim_result(1.5, fitness=1.1, drawdown=0.04)
+    best = rank.shortlist([deep, clean], limit=5)
+    assert [s.result.stats["drawdown"] for s in best] == [0.04]
+
+
+def test_shortlist_keeps_alphas_with_no_reported_drawdown():
+    """gate.py skips an unreported drawdown; the shortlist must agree."""
+    result = sim_result(1.5)
+    del result.alpha["is"]["drawdown"]
+    assert len(rank.shortlist([result], limit=5)) == 1
+
+
+def test_score_drawdown_penalty_is_bounded():
+    """The drawdown penalty must not exceed -3.0 (1.5 * min(overshoot, 2.0))."""
+    base = rank.score(sim_result(1.5, drawdown=0.05)).score
+    worst = rank.score(sim_result(1.5, drawdown=1.0)).score
+    # The difference from drawdown alone should be at most 3.0
+    # (other factors like returns are constant between the two calls)
+    assert base - worst <= 3.0 + 0.01  # small float tolerance
 
 
 def test_shortlist_drops_failing_and_weak_candidates():

@@ -21,9 +21,15 @@ class GenerationSpec:
     field_search: Optional[str] = None
     #: Settings variants swept per candidate expression. Each entry is a dict of
     #: setting overrides merged onto the defaults.
-    variants: tuple[dict, ...] = (
-        {"neutralization": "SUBINDUSTRY", "decay": 6, "truncation": 0.08},
-    )
+    #:
+    #: Left as ``None``, every expression runs once under the settings its
+    #: template declares via :data:`config.REGIMES` — a momentum template gets
+    #: momentum decay, a reversion template gets reversion decay. Setting this
+    #: explicitly overrides that and sweeps every expression across every
+    #: variant given, which multiplies job count without adding expressions.
+    #: ``budget`` caps the job list, so an N-variant sweep divides the number of
+    #: distinct expressions actually simulated by N.
+    variants: Optional[tuple[dict, ...]] = None
     template_names: Optional[tuple[str, ...]] = None
     max_fields: int = 40
     budget: int = 40
@@ -73,11 +79,16 @@ def generate(
             candidates = [t for t in candidates if t.name in wanted]
 
         for template in candidates:
+            # Without an explicit sweep the template's own regime supplies the
+            # settings, so each expression costs exactly one simulation slot.
+            variants = spec.variants or (
+                config.REGIMES.get(template.regime, config.REGIMES["balanced"]),
+            )
             for expr in template.expand(field_id):
                 if expr in codes or expr in already:
                     continue
                 codes.add(expr)
-                for variant in spec.variants:
+                for variant in variants:
                     settings = build_settings(
                         region=spec.region,
                         delay=spec.delay,

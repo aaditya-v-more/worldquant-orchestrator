@@ -142,6 +142,34 @@ DEFAULT_SETTINGS: dict = {
 }
 
 
+#: Settings tuned per strategy family, following *151 Trading Strategies*
+#: (Kakushadze & Serur, 2018). A template declares which family it belongs to
+#: and the generator simulates it under that family's settings only — one job
+#: per expression. Sweeping every expression across every regime would multiply
+#: job count without adding expressions, which on a one-slot account trades
+#: search breadth for redundancy.
+#:
+#: decay — momentum (§3.1, §10.4) wants 8-12: smoothing cuts turnover, which
+#: lifts fitness. Mean reversion (§3.9, §10.3) wants 3-5: the signal is
+#: short-lived and over-smoothing destroys it. Fundamentals (§3.3) update
+#: quarterly, so 6-10 costs nothing.
+#:
+#: neutralization — SUBINDUSTRY is tightest and isolates stock-specific alpha,
+#: which is what reversion and pairs-style signals trade (§3.8, §3.9). MARKET
+#: is loosest and lets sector rotation through, which is where trend-following
+#: earns (§3.1, §4.1). INDUSTRY sits between, for multifactor and value (§3.6).
+#:
+#: truncation — 0.05 is conservative and reduces CONCENTRATED_WEIGHT failures
+#: on high-turnover or sparse signals; 0.10 allows stronger bets and suits
+#: slow-moving fundamentals with good coverage.
+REGIMES: dict[str, dict] = {
+    "balanced": {"neutralization": "SUBINDUSTRY", "decay": 6, "truncation": 0.08},
+    "momentum": {"neutralization": "MARKET", "decay": 10, "truncation": 0.05},
+    "reversion": {"neutralization": "SUBINDUSTRY", "decay": 4, "truncation": 0.08},
+    "value": {"neutralization": "INDUSTRY", "decay": 8, "truncation": 0.10},
+}
+
+
 # --------------------------------------------------------------------------
 # Quality gate
 # --------------------------------------------------------------------------

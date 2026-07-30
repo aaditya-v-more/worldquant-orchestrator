@@ -27,6 +27,14 @@ def score(result: SimResult, thresholds: Optional[GateThresholds] = None) -> Sco
     weighted next; turnover contributes only as a penalty when it strays
     outside the acceptable band. Sign is ignored — a strongly negative alpha
     is a strongly positive one with a minus sign in front.
+
+    Every term corresponds to a gate criterion. Returns deliberately does not
+    appear on its own: there is no returns criterion, and it already enters
+    through fitness, which BRAIN defines as
+    Sharpe × sqrt(|Returns| / max(Turnover, 0.125)). Adding it again would
+    double-count it, and because returns and drawdown rise together it would
+    partly refund the drawdown penalty to exactly the blow-up candidates the
+    penalty exists to demote.
     """
     t = thresholds or GATE
     stats = result.stats
@@ -38,6 +46,7 @@ def score(result: SimResult, thresholds: Optional[GateThresholds] = None) -> Sco
     sharpe = abs(float(stats.get("sharpe") or 0.0))
     fitness = abs(float(stats.get("fitness") or 0.0))
     turnover = float(stats.get("turnover") or 0.0)
+    drawdown = abs(float(stats.get("drawdown") or 0.0))
 
     value = sharpe * 2.0 + fitness
 
@@ -48,6 +57,14 @@ def score(result: SimResult, thresholds: Optional[GateThresholds] = None) -> Sco
         # Scale the penalty with the overshoot rather than a flat hit.
         value -= 2.0 * (turnover - t.max_turnover) / max(t.max_turnover, 1e-9)
         reasons.append(f"turnover {turnover:.3f} above {t.max_turnover}")
+
+    # Drawdown is a local gate criterion rather than a BRAIN check, so nothing
+    # else in the ranking path notices it. Without this a high-Sharpe alpha
+    # that is a certain gate failure sorts straight to the top.
+    if drawdown > t.max_drawdown:
+        overshoot = (drawdown - t.max_drawdown) / max(t.max_drawdown, 1e-9)
+        value -= 1.5 * min(overshoot, 2.0)
+        reasons.append(f"drawdown {drawdown:.3f} exceeds {t.max_drawdown}")
 
     checks = stats.get("checks") or []
     failed = [c.get("name") for c in checks if c.get("result") == "FAIL"]
@@ -79,6 +96,13 @@ def shortlist(
             if any(c.get("result") == "FAIL" for c in checks):
                 continue
             if abs(float(stats.get("sharpe") or 0.0)) < t.min_sharpe:
+                continue
+            # Drawdown over the limit is a definite gate failure, not a soft
+            # signal, so drop it here rather than relying on the score penalty
+            # to sort it far enough down. Absent drawdown is not a failure —
+            # gate.py skips the criterion when BRAIN does not report it.
+            reported = stats.get("drawdown")
+            if isinstance(reported, (int, float)) and abs(reported) > t.max_drawdown:
                 continue
             kept.append(item)
         scored = kept

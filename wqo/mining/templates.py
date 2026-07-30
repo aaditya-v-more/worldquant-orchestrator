@@ -34,6 +34,11 @@ class Template:
     field_kinds: tuple[str, ...] = ("MATRIX",)
     #: Whether the raw field should be ts_backfill-wrapped first.
     backfill: bool = True
+    #: Which entry of :data:`config.REGIMES` supplies decay, neutralization
+    #: and truncation for this template. A momentum signal and a reversion
+    #: signal want opposite decay, so the settings follow the template rather
+    #: than being swept blindly across all of them.
+    regime: str = "balanced"
 
     def expand(self, field_name: str) -> Iterator[str]:
         base = BACKFILL.format(field=field_name) if self.backfill else field_name
@@ -47,6 +52,7 @@ class Template:
 
 DAYS = (5, 10, 22, 66)
 LONG_DAYS = (22, 66, 252)
+SHORT_DAYS = (5, 10, 22)
 GROUPS = ("subindustry", "industry", "sector")
 
 
@@ -156,6 +162,123 @@ TEMPLATES: tuple[Template, ...] = (
         operators=("vec_sum", "zscore"),
         field_kinds=("VECTOR",),
         backfill=False,
+    ),
+    # ------------------------------------------------------------------
+    # Templates derived from *151 Trading Strategies* (Kakushadze & Serur)
+    # ------------------------------------------------------------------
+    # §3.1 Price-momentum: dual-horizon confirmation. A stock rising on both
+    # a short and a long window has a stronger trend signal than either alone.
+    Template(
+        name="dual_momentum",
+        expr="rank(ts_delta({field}, {d_short}) + ts_delta({field}, {d_long}))",
+        operators=("ts_delta", "rank"),
+        knobs={"d_short": (5, 10), "d_long": (22, 66)},
+        regime="momentum",
+    ),
+    # §3.4 Low-volatility anomaly: stocks with lower recent volatility tend to
+    # outperform on a risk-adjusted basis. The leading minus that "inverts" the
+    # rank is omitted deliberately — scoring and the gate both take absolute
+    # value, so a sign flip changes nothing but the reported sign.
+    Template(
+        name="low_volatility",
+        expr="rank(ts_std_dev({field}, {d}))",
+        operators=("ts_std_dev", "rank"),
+        knobs={"d": (22, 66)},
+        regime="balanced",
+    ),
+    # §3.7 Residual momentum: momentum after stripping group (sector/industry)
+    # exposure. Isolates the stock-specific component of a trend.
+    Template(
+        name="residual_momentum",
+        expr="group_neutralize(ts_delta({field}, {d}), {g})",
+        operators=("group_neutralize", "ts_delta"),
+        knobs={"d": SHORT_DAYS, "g": GROUPS},
+        regime="momentum",
+    ),
+    # §3.9 Mean-reversion (Ornstein-Uhlenbeck style): z-scored distance from
+    # the moving average. Larger deviation → stronger reversion expectation.
+    Template(
+        name="ma_distance_zscore",
+        expr="ts_zscore({field} - ts_mean({field}, {d}), {d})",
+        operators=("ts_zscore", "ts_mean"),
+        knobs={"d": LONG_DAYS},
+        regime="reversion",
+    ),
+    # §3.15 Channel breakout: position of current value within its own
+    # min–max range over a lookback. Near 1 = breakout high, near 0 = low.
+    Template(
+        name="channel_position",
+        expr="({field} - ts_min({field}, {d})) / (ts_max({field}, {d}) - ts_min({field}, {d}) + 0.000000001)",
+        operators=("ts_min", "ts_max"),
+        knobs={"d": LONG_DAYS},
+        regime="momentum",
+    ),
+    # §10.4 Trend following (momentum) with exponential decay: weights recent
+    # changes more heavily, producing a smoother momentum signal.
+    Template(
+        name="exp_decay_momentum",
+        expr="ts_decay_linear(ts_delta({field}, 1), {d})",
+        operators=("ts_decay_linear", "ts_delta"),
+        knobs={"d": SHORT_DAYS},
+        regime="momentum",
+    ),
+    # §10.3 Contrarian trading gated on market activity: mean-reversion signal
+    # only fires when volume confirms participation (avoids stale reversals).
+    # The third trade_when argument is the *exit* trigger, not a fallback
+    # value; -1 never fires, matching liquidity_gated above.
+    Template(
+        name="volume_gated_reversal",
+        expr="trade_when(volume > adv20, -ts_delta({field}, {d}), -1)",
+        operators=("trade_when", "ts_delta"),
+        knobs={"d": (1, 5, 10)},
+        regime="reversion",
+    ),
+    # §3.6 / §3.20 Multifactor / Alpha combos: combine a level signal with a
+    # change signal. Captures "cheap AND improving" style interactions.
+    Template(
+        name="multifactor_level_change",
+        expr="rank({field}) + rank(-ts_delta({field}, {d}))",
+        operators=("rank", "ts_delta"),
+        knobs={"d": SHORT_DAYS},
+        regime="value",
+    ),
+    # Volatility-scaled reversal (§3.4 + §3.9): mean-reversion normalized by
+    # recent vol so the signal is comparable across high/low-vol names.
+    Template(
+        name="vol_scaled_reversal",
+        expr="-ts_delta({field}, {d}) / (ts_std_dev({field}, {d}) + 0.000000001)",
+        operators=("ts_delta", "ts_std_dev"),
+        knobs={"d": SHORT_DAYS},
+        regime="reversion",
+    ),
+    # §3.11/§3.12 Moving average crossover proxy: short MA minus long MA,
+    # ranked cross-sectionally. Positive = short-term trend above long-term.
+    Template(
+        name="ma_crossover",
+        expr="rank(ts_mean({field}, {d_fast}) - ts_mean({field}, {d_slow}))",
+        operators=("ts_mean", "rank"),
+        knobs={"d_fast": (5, 10), "d_slow": (22, 66)},
+        regime="momentum",
+    ),
+    # §3.3 Value + momentum interaction: rank the field level, then weight by
+    # recent momentum. Favors "cheap stocks that are starting to recover".
+    Template(
+        name="value_momentum_combo",
+        expr="rank({field}) * ts_rank({field}, {d})",
+        operators=("rank", "ts_rank"),
+        knobs={"d": LONG_DAYS},
+        regime="value",
+    ),
+    # §3.14 Support/resistance via arg-max/arg-min. Both operators report days
+    # since the extreme, so the difference is signed: positive means the N-day
+    # high is older than the low (the field has been falling toward support),
+    # negative the reverse. It is a trend-direction signal, not a recency one.
+    Template(
+        name="days_since_extreme",
+        expr="rank(ts_arg_max({field}, {d}) - ts_arg_min({field}, {d}))",
+        operators=("ts_arg_max", "ts_arg_min", "rank"),
+        knobs={"d": (22, 66)},
+        regime="momentum",
     ),
 )
 
