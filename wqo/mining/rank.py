@@ -27,6 +27,13 @@ def score(result: SimResult, thresholds: Optional[GateThresholds] = None) -> Sco
     weighted next; turnover contributes only as a penalty when it strays
     outside the acceptable band. Sign is ignored — a strongly negative alpha
     is a strongly positive one with a minus sign in front.
+
+    Scoring informed by *151 Trading Strategies* (Kakushadze & Serur):
+    - Drawdown penalty (§3.4, §15.3): low-volatility and distress-risk
+      literature shows large drawdowns predict future instability.
+    - Returns contribution: the fitness formula is
+      Sharpe × sqrt(|Returns| / max(Turnover, 0.125)), so returns matter
+      directly for submission eligibility.
     """
     t = thresholds or GATE
     stats = result.stats
@@ -38,9 +45,16 @@ def score(result: SimResult, thresholds: Optional[GateThresholds] = None) -> Sco
     sharpe = abs(float(stats.get("sharpe") or 0.0))
     fitness = abs(float(stats.get("fitness") or 0.0))
     turnover = float(stats.get("turnover") or 0.0)
+    drawdown = abs(float(stats.get("drawdown") or 0.0))
+    returns = abs(float(stats.get("returns") or 0.0))
 
     value = sharpe * 2.0 + fitness
 
+    # Reward healthy returns (feeds directly into the fitness formula)
+    if returns > 0:
+        value += min(returns * 2.0, 1.0)
+
+    # Turnover penalties
     if turnover < t.min_turnover:
         value -= 2.0
         reasons.append(f"turnover {turnover:.3f} below {t.min_turnover}")
@@ -48,6 +62,13 @@ def score(result: SimResult, thresholds: Optional[GateThresholds] = None) -> Sco
         # Scale the penalty with the overshoot rather than a flat hit.
         value -= 2.0 * (turnover - t.max_turnover) / max(t.max_turnover, 1e-9)
         reasons.append(f"turnover {turnover:.3f} above {t.max_turnover}")
+
+    # Drawdown penalty: alphas with large peak-to-trough declines are
+    # unlikely to survive BRAIN's checks and indicate instability.
+    if drawdown > t.max_drawdown:
+        overshoot = (drawdown - t.max_drawdown) / max(t.max_drawdown, 1e-9)
+        value -= 1.5 * min(overshoot, 2.0)
+        reasons.append(f"drawdown {drawdown:.3f} exceeds {t.max_drawdown}")
 
     checks = stats.get("checks") or []
     failed = [c.get("name") for c in checks if c.get("result") == "FAIL"]

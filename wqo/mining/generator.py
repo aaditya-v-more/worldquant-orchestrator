@@ -21,8 +21,24 @@ class GenerationSpec:
     field_search: Optional[str] = None
     #: Settings variants swept per candidate expression. Each entry is a dict of
     #: setting overrides merged onto the defaults.
+    #:
+    #: Derived from *151 Trading Strategies* (Kakushadze & Serur):
+    #: - Trend/momentum strategies (§3.1, §10.4): higher decay (10) smooths
+    #:   turnover; MARKET neutralization captures broad trends.
+    #: - Mean-reversion strategies (§3.9, §10.3): low decay (4) keeps the
+    #:   signal reactive; SUBINDUSTRY neutralization isolates stock-specific.
+    #: - Multifactor/value (§3.3, §3.6): moderate decay (6), INDUSTRY neut.
+    #: - Lower truncation (0.05) for high-turnover signals to reduce weight
+    #:   concentration; higher (0.10) for slow-moving fundamentals.
     variants: tuple[dict, ...] = (
+        # Default balanced (existing behaviour)
         {"neutralization": "SUBINDUSTRY", "decay": 6, "truncation": 0.08},
+        # Momentum / trend-following regime (§3.1, §10.4)
+        {"neutralization": "MARKET", "decay": 10, "truncation": 0.05},
+        # Fast mean-reversion regime (§3.9, §10.3)
+        {"neutralization": "SUBINDUSTRY", "decay": 4, "truncation": 0.08},
+        # Fundamental / value regime (§3.3, §3.6)
+        {"neutralization": "INDUSTRY", "decay": 8, "truncation": 0.10},
     )
     template_names: Optional[tuple[str, ...]] = None
     max_fields: int = 40
