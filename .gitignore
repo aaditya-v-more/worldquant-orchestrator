@@ -11,3 +11,7 @@ data/
 
 # generated alpha candidate batches — inputs to `sim batch`, not source
 ideas/
+
+# alpha expressions and their statistics are the author's IP, and this repo has
+# more than one user — provenance stays on the machine that produced it
+provenance/

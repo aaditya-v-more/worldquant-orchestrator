@@ -1,0 +1,119 @@
+diff --git a/.claude/skills/wq-alphas/SKILL.md b/.claude/skills/wq-alphas/SKILL.md
+index de66ded..ce1a836 100644
+--- a/.claude/skills/wq-alphas/SKILL.md
++++ b/.claude/skills/wq-alphas/SKILL.md
+@@ -76,12 +76,17 @@ is reproducible:
+ | Field | Convention |
+ |---|---|
+ | `name` | `USA/TOP3000 D1 · <signal> · Sh1.68 Fit1.30` |
+-| `tags` | `wqo`, region, universe, `delay-N`, `neut-*`, `tpl-<template>`, datafields |
++| `tags` | region, universe, `delay-N`, `neut-*`, datafields |
+ | `color` | by failing-check count, per the table above |
+-| `description` | expression, full stats line, settings, failing checks, provenance |
++| `description` | expression, full stats line, settings, failing checks |
+ 
+-`<signal>` is the mining label (`template:datafield`) when this tool ran the
+-simulation, otherwise the first datafield in the expression.
++`<signal>` is the mining label with its `template:` prefix stripped when this
++tool ran the simulation, otherwise the first datafield in the expression.
++
++Nothing written to BRAIN may reveal that a tool produced it — no tool tag, no
++`tpl-<template>`, no "Labelled by …" footer, no internal test names. Mining
++labels, template ids and batch ids are provenance: they belong in `provenance/`
++in this repo, never in a field the platform shows a reviewer.
+ 
+ Only alphas with no name are touched. Pass `--relabel` to overwrite existing
+ names — ask the user first, it discards names they wrote by hand.
+diff --git a/tests/test_offline.py b/tests/test_offline.py
+index 2b02d96..b8db531 100644
+--- a/tests/test_offline.py
++++ b/tests/test_offline.py
+@@ -303,12 +303,21 @@ def test_describe_is_deterministic_and_uses_the_mining_label():
+     first = alphas_mod.describe(alpha, label="eps_to_price:eps_mean")
+     second = alphas_mod.describe(alpha, label="eps_to_price:eps_mean")
+     assert first == second, "labels must be reproducible, not time-dependent"
+-    assert first["name"] == "USA/TOP3000 D1 · eps_to_price:eps_mean · Sh1.68 Fit1.30"
+-    assert "tpl-eps_to_price" in first["tags"]
+-    assert first["tags"][0] == alphas_mod.TOOL_TAG
++    # The template half of the label is internal provenance and is stripped.
++    assert first["name"] == "USA/TOP3000 D1 · eps_mean · Sh1.68 Fit1.30"
+     assert first["color"] == alphas_mod.COLOR_PASS
+ 
+ 
++def test_describe_leaks_no_tooling_fingerprint():
++    """Nothing written to BRAIN may reveal that a tool produced it."""
++    labelled = alphas_mod.describe(_alpha_record(), label="eps_to_price:eps_mean")
++    published = " ".join(
++        [labelled["name"], labelled["description"], *labelled["tags"]]
++    ).lower()
++    for fingerprint in ("wqo", "tpl-", "eps_to_price:", "labelled by", "generated"):
++        assert fingerprint not in published, f"{fingerprint!r} leaked into {published!r}"
++
++
+ def test_describe_colours_by_failing_check_count():
+     def color_for(*results):
+         checks = [{"name": f"C{i}", "result": r} for i, r in enumerate(results)]
+diff --git a/wqo/alphas.py b/wqo/alphas.py
+index 7475512..7a56f59 100644
+--- a/wqo/alphas.py
++++ b/wqo/alphas.py
+@@ -180,8 +180,11 @@ COLOR_PASS = "GREEN"
+ COLOR_BORDERLINE = "YELLOW"
+ COLOR_FAIL = "RED"
+ 
+-#: Tag applied to everything this tool labels, so `--tag wqo` finds them all.
+-TOOL_TAG = "wqo"
++#: Nothing written to BRAIN may reveal that a tool produced it — no tool tag,
++#: no provenance footer, no template id. The mining label's template half and
++#: the batch that produced it are provenance: they belong in `provenance/`,
++#: never in a field the platform shows to a reviewer.
++_TEMPLATE_ID = re.compile(r"^[^:]+:")
+ 
+ _IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+ _ASSIGNED = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\s*=(?!=)")
+@@ -220,8 +223,10 @@ def describe(alpha: dict, *, label: Optional[str] = None) -> dict:
+     """Derive name, tags, colour and description for one alpha record.
+ 
+     ``label`` is the mining label (``template:datafield``) when the alpha came
+-    from a batch this tool ran; it makes a far better name than anything
+-    recoverable from the expression, so it wins when present.
++    from a batch this tool ran; its descriptive half makes a far better name
++    than anything recoverable from the expression, so it wins when present. The
++    ``template:`` prefix is stripped — it names an internal template, which is
++    provenance and must not reach the platform.
+     """
+     settings = alpha.get("settings") or {}
+     stats = alpha.get("is") or {}
+@@ -231,7 +236,7 @@ def describe(alpha: dict, *, label: Optional[str] = None) -> dict:
+     delay = settings.get("delay")
+ 
+     fields = datafields_in(code)
+-    signal = label or (fields[0] if fields else "expr")
++    signal = _TEMPLATE_ID.sub("", label) if label else (fields[0] if fields else "expr")
+     sharpe, fitness = stats.get("sharpe"), stats.get("fitness")
+ 
+     name = (
+@@ -250,14 +255,12 @@ def describe(alpha: dict, *, label: Optional[str] = None) -> dict:
+     else:
+         color = COLOR_FAIL
+ 
+-    tags = [TOOL_TAG, region, universe]
++    tags = [region, universe]
+     if delay is not None:
+         tags.append(f"delay-{delay}")
+     neutralization = settings.get("neutralization")
+     if neutralization:
+         tags.append(f"neut-{str(neutralization).lower()}")
+-    if label and ":" in label:
+-        tags.append(f"tpl-{label.split(':', 1)[0]}")
+     tags.extend(fields[:2])
+     # Duplicates are possible (a datafield named like a region is unlikely but
+     # cheap to guard); BRAIN keeps whatever list it is given.
+@@ -274,7 +277,6 @@ def describe(alpha: dict, *, label: Optional[str] = None) -> dict:
+             f"{region} {universe} delay {delay}, neutralization {neutralization}, "
+             f"decay {settings.get('decay')}, truncation {settings.get('truncation')}",
+             f"Failing checks: {', '.join(failed) if failed else 'none'}",
+-            f"Labelled by wqo{f' from mining label {label}' if label else ''}.",
+         ]
+     )
+ 
