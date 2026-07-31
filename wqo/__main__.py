@@ -24,7 +24,14 @@ from . import alphas as alphas_mod
 from . import config, endpoints, mining, submit as submit_mod
 from .catalog import Catalog
 from .session import ApiError, AuthError, BiometricRequired, BrainSession
-from .simulate import SimJob, SlotManager, build_settings, simulate_many, simulate_one
+from .simulate import (
+    SimJob,
+    SlotManager,
+    build_settings,
+    normalize_test_period,
+    simulate_many,
+    simulate_one,
+)
 from .store import BudgetExceeded, Ledger
 
 EXIT_OK = 0
@@ -63,6 +70,7 @@ def _settings_from(args) -> dict:
         pasteurization=args.pasteurization,
         nanHandling=args.nan_handling,
         unitHandling=args.unit_handling,
+        testPeriod=normalize_test_period(args.test_period),
     )
 
 
@@ -268,6 +276,7 @@ def cmd_alpha(args) -> int:
                     min_fitness=args.min_fitness,
                     color=args.color,
                     tag=args.tag,
+                    grade=args.grade,
                     order=args.order,
                     limit=args.limit,
                 )
@@ -362,17 +371,32 @@ def cmd_submit(args) -> int:
 
 def cmd_mine(args) -> int:
     session = _session(args)
-    variants = [
-        {"neutralization": n, "decay": args.decay, "truncation": args.truncation}
-        for n in (args.neutralizations.split(",") if args.neutralizations else ["SUBINDUSTRY"])
-    ]
+    # Only an explicit --neutralizations turns mining into a sweep. Left off,
+    # variants stays None so each template runs under its own regime.
+    variants = (
+        tuple({"neutralization": n} for n in args.neutralizations.split(","))
+        if args.neutralizations
+        else None
+    )
+    # Knobs the user pinned explicitly override the regime; the rest are left
+    # to whichever template is generating the expression.
+    overrides = {
+        key: value
+        for key, value in (
+            ("decay", args.decay),
+            ("truncation", args.truncation),
+            ("testPeriod", normalize_test_period(args.test_period)),
+        )
+        if value is not None
+    }
     spec = mining.GenerationSpec(
         region=args.region,
         delay=args.delay,
         universe=args.universe,
         dataset_id=args.dataset,
         field_search=args.search,
-        variants=tuple(variants),
+        variants=variants,
+        overrides=overrides,
         template_names=tuple(args.templates.split(",")) if args.templates else None,
         max_fields=args.max_fields,
         budget=args.budget,
@@ -518,6 +542,11 @@ def add_settings_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--pasteurization", default=d["pasteurization"])
     parser.add_argument("--nan-handling", default=d["nanHandling"])
     parser.add_argument("--unit-handling", default=d["unitHandling"])
+    parser.add_argument(
+        "--test-period",
+        default=d["testPeriod"],
+        help="out-of-sample tail reserved from the backtest, e.g. 1y, 6m, 1y6m",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -586,6 +615,10 @@ def build_parser() -> argparse.ArgumentParser:
     listing.add_argument("--min-fitness", type=float)
     listing.add_argument("--color")
     listing.add_argument("--tag")
+    listing.add_argument(
+        "--grade",
+        help="INFERIOR, AVERAGE, GOOD, EXCELLENT, SPECTACULAR (matched locally)",
+    )
     listing.add_argument("--order", default="-dateCreated")
     listing.add_argument("--limit", type=int, default=50)
     tag = alpha_sub.add_parser("tag", help="edit name, colour, tags, description")
@@ -623,8 +656,17 @@ def build_parser() -> argparse.ArgumentParser:
     mine.add_argument("--delay", type=int, default=1)
     mine.add_argument("--universe", default="TOP3000")
     mine.add_argument("--neutralizations", help="comma separated, e.g. SUBINDUSTRY,MARKET")
-    mine.add_argument("--decay", type=int, default=6)
-    mine.add_argument("--truncation", type=float, default=0.08)
+    mine.add_argument(
+        "--decay", type=int, help="pin decay; default is the template's own regime"
+    )
+    mine.add_argument(
+        "--truncation",
+        type=float,
+        help="pin truncation; default is the template's own regime",
+    )
+    mine.add_argument(
+        "--test-period", help="out-of-sample tail, e.g. 1y, 6m, 1y6m (default none)"
+    )
     mine.add_argument("--templates", help="comma separated template names")
     mine.add_argument("--max-fields", type=int, default=40)
     mine.add_argument("--budget", type=int, default=40, help="max simulations this run")

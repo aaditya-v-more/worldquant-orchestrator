@@ -43,6 +43,10 @@ class Criterion:
 class GateReport:
     alpha_id: Optional[str]
     criteria: list[Criterion] = field(default_factory=list)
+    #: BRAIN's own verdict — INFERIOR / AVERAGE / GOOD / EXCELLENT /
+    #: SPECTACULAR. Computed server-side and read-only. It is reported, never
+    #: acted on: the checks below are what actually decide a submission.
+    grade: Optional[str] = None
 
     @property
     def failures(self) -> list[Criterion]:
@@ -63,6 +67,7 @@ class GateReport:
     def to_dict(self) -> dict:
         return {
             "alpha_id": self.alpha_id,
+            "grade": self.grade,
             "passed": self.passed,
             "failures": [c.name for c in self.failures],
             "warnings": [c.name for c in self.warnings],
@@ -81,7 +86,10 @@ class GateReport:
         }
 
     def render(self) -> str:
-        lines = [f"Alpha {self.alpha_id or '(unsaved)'}"]
+        header = f"Alpha {self.alpha_id or '(unsaved)'}"
+        if self.grade:
+            header += f"  [grade {self.grade}]"
+        lines = [header]
         width = max((len(c.name) for c in self.criteria), default=10)
         for c in self.criteria:
             value = "-" if c.value is None else f"{c.value:.4g}"
@@ -251,4 +259,6 @@ def build_report(
         alpha, self_corr=self_corr, prod_corr=prod_corr, thresholds=thresholds
     )
     criteria.extend(evaluate_brain_checks(brain_checks))
-    return GateReport(alpha_id=alpha.get("id"), criteria=criteria)
+    return GateReport(
+        alpha_id=alpha.get("id"), criteria=criteria, grade=alpha.get("grade")
+    )

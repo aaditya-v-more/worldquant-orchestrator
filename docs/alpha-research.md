@@ -108,6 +108,39 @@ most days concentrates the whole book into the few names that have data.
 
 ---
 
+## Grade
+
+Every alpha record carries a `grade` alongside its `is` statistics — BRAIN's own
+one-word verdict, computed server-side and read-only:
+
+```
+INFERIOR  <  AVERAGE  <  GOOD  <  EXCELLENT  <  SPECTACULAR
+```
+
+It arrives free on `GET /alphas/{id}`, so `wqo sim run`, `wqo mine` and
+`wqo gate` all report it without an extra call, and `wqo alpha list --grade
+EXCELLENT` filters on it.
+
+It is reported, never acted on. Submission eligibility is decided by the checks
+in `is.checks`, not by the grade, and the local thresholds in `wqo/config.py`
+are what pre-filter mining output. Treat a high grade as a hint that an alpha is
+worth a closer look, not as a substitute for the gate.
+
+---
+
+## Test period
+
+`testPeriod` reserves the tail of the backtest window as out-of-sample, written
+as an ISO-8601 duration in years and months — `P1Y0M` for one year, `P0Y0M`
+(the default) to keep the whole window in-sample. The CLI accepts `1y`, `6m`,
+`1y6m` or the full `P1Y6M` and normalizes them.
+
+Reserving a year shortens the in-sample window the reported Sharpe is measured
+over, so IS numbers are not comparable across different test periods. Set it
+when you want a held-out check on a specific alpha, not as a default for mining.
+
+---
+
 ## Terminology
 
 - **Alpha** — expression producing a ranked signal across a universe, predicting future returns.

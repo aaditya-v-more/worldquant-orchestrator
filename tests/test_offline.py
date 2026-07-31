@@ -19,7 +19,12 @@ from wqo import config, gate  # noqa: E402
 from wqo.config import GateThresholds, Pacing  # noqa: E402
 from wqo.mining import generator, rank, templates  # noqa: E402
 from wqo.pacing import RateGovernor, is_retryable  # noqa: E402
-from wqo.simulate import SimResult, SlotManager, build_settings  # noqa: E402
+from wqo.simulate import (  # noqa: E402
+    SimResult,
+    SlotManager,
+    build_settings,
+    normalize_test_period,
+)
 from wqo.store import BudgetExceeded, Ledger, check_submission_budget  # noqa: E402
 
 
@@ -331,9 +336,69 @@ def test_report_renders_without_error():
     assert "AL1" in text and "PASSED" in text
 
 
+def test_grade_is_reported_but_never_decides_the_gate():
+    """BRAIN's grade is informational; the checks are what block a submission."""
+    record = dict(alpha_record(), grade="EXCELLENT")
+    report = gate.build_report(
+        dict(record, **{"is": dict(record["is"], sharpe=0.1, fitness=0.1)}),
+        self_corr=0.1,
+        prod_corr=0.1,
+        thresholds=THRESHOLDS,
+    )
+    assert report.grade == "EXCELLENT"
+    assert report.to_dict()["grade"] == "EXCELLENT"
+    assert "EXCELLENT" in report.render()
+    assert not report.passed
+
+
+def test_missing_grade_stays_out_of_the_rendered_header():
+    report = gate.build_report(alpha_record(), self_corr=0.2, prod_corr=0.2)
+    assert report.grade is None
+    assert "grade" not in report.render()
+
+
+def test_sim_summary_carries_the_grade():
+    result = sim_result(1.5)
+    result.alpha = dict(result.alpha, grade="GOOD")
+    assert result.summary()["grade"] == "GOOD"
+    assert sim_result(1.5).summary()["grade"] is None
+
+
 # --------------------------------------------------------------------------
 # correlation parsing
 # --------------------------------------------------------------------------
+
+
+class FakeAlphaSession:
+    """Answers /users/self/alphas from a fixed list, ignoring query filters."""
+
+    def __init__(self, records):
+        self.records = records
+
+    def json(self, _method, _url, **_kwargs):
+        return {"results": self.records, "count": len(self.records)}
+
+
+def test_search_filters_by_grade():
+    from wqo import alphas
+
+    session = FakeAlphaSession(
+        [
+            {"id": "A", "grade": "INFERIOR"},
+            {"id": "B", "grade": "EXCELLENT"},
+            {"id": "C", "grade": "GOOD"},
+        ]
+    )
+    ids = [a["id"] for a in alphas.search(session, grade="excellent")]
+    assert ids == ["B"]
+    assert len(list(alphas.search(session))) == 3
+
+
+def test_search_grade_filter_tolerates_records_without_one():
+    from wqo import alphas
+
+    session = FakeAlphaSession([{"id": "A"}, {"id": "B", "grade": "GOOD"}])
+    assert [a["id"] for a in alphas.search(session, grade="GOOD")] == ["B"]
 
 
 def test_max_correlation_from_recordset():
@@ -601,6 +666,58 @@ def test_explicit_variants_still_sweep_every_expression():
     jobs = _jobs(variants=variants)
     assert len(jobs) == 2 * len({j.code for j in jobs})
     assert {j.settings["decay"] for j in jobs} == {2, 20}
+
+
+def test_overrides_pin_one_knob_and_leave_the_regime_alone():
+    """Pinning decay must not flatten neutralization onto every template.
+
+    A previous CLI version built a full variant dict from its own defaults, so
+    `spec.variants` was never None and the per-template regimes never applied.
+    """
+    by_name = {t.name: t for t in templates.TEMPLATES}
+    jobs = _jobs(overrides={"decay": 11})
+    assert len(jobs) == len({j.code for j in jobs})
+    for job in jobs:
+        regime = config.REGIMES[by_name[job.label.split(":", 1)[0]].regime]
+        assert job.settings["decay"] == 11
+        assert job.settings["neutralization"] == regime["neutralization"]
+        assert job.settings["truncation"] == regime["truncation"]
+
+
+def test_overrides_win_over_an_explicit_variant():
+    jobs = _jobs(variants=({"decay": 2},), overrides={"decay": 7})
+    assert {j.settings["decay"] for j in jobs} == {7}
+
+
+def test_test_period_reaches_generated_settings():
+    jobs = _jobs(overrides={"testPeriod": "P1Y0M"})
+    assert {j.settings["testPeriod"] for j in jobs} == {"P1Y0M"}
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("1y", "P1Y0M"),
+        ("6m", "P0Y6M"),
+        ("1y6m", "P1Y6M"),
+        ("P1Y0M", "P1Y0M"),
+        ("p2y3m", "P2Y3M"),
+        ("18M", "P0Y18M"),
+    ],
+)
+def test_test_period_normalizes_the_shorthands(raw, expected):
+    assert normalize_test_period(raw) == expected
+
+
+@pytest.mark.parametrize("raw", ["", "  ", None])
+def test_blank_test_period_is_dropped_not_guessed(raw):
+    assert normalize_test_period(raw) is None
+
+
+@pytest.mark.parametrize("raw", ["1 year", "P1D", "next year", "1y2d", "-1y"])
+def test_invalid_test_period_is_rejected(raw):
+    with pytest.raises(ValueError):
+        normalize_test_period(raw)
 
 
 def sim_result(sharpe, fitness=1.2, turnover=0.25, checks=None, drawdown=0.05, returns=0.15):

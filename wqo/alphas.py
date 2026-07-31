@@ -106,6 +106,7 @@ def search(
     min_fitness: Optional[float] = None,
     color: Optional[str] = None,
     tag: Optional[str] = None,
+    grade: Optional[str] = None,
     hidden: Optional[bool] = None,
     order: str = "-dateCreated",
     limit: int = 100,
@@ -115,7 +116,13 @@ def search(
     BRAIN encodes range filters as ``is.sharpe>1.25``. ``requests`` would
     percent-encode the ``>``, so range filters are appended to the raw query
     string instead of going through ``params``.
+
+    ``grade`` is filtered here rather than server-side. It is a read-only
+    verdict BRAIN computes (INFERIOR / AVERAGE / GOOD / EXCELLENT /
+    SPECTACULAR) and it is already on every record, so matching locally avoids
+    guessing at a query parameter this account tier may not accept.
     """
+    wanted_grade = grade.upper() if grade else None
     base: dict[str, Any] = {"order": order, "limit": min(limit, PAGE_SIZE)}
     if status:
         base["status"] = status
@@ -149,6 +156,8 @@ def search(
         )
         results = payload.get("results") or []
         for item in results:
+            if wanted_grade and str(item.get("grade") or "").upper() != wanted_grade:
+                continue
             yield item
             yielded += 1
             if yielded >= limit:

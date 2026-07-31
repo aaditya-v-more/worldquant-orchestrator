@@ -13,6 +13,7 @@ account's real concurrency from those 429s instead of assuming a tier.
 
 from __future__ import annotations
 
+import re
 import threading
 import time
 from dataclasses import dataclass
@@ -76,6 +77,9 @@ class SimResult:
             "returns": s.get("returns"),
             "drawdown": s.get("drawdown"),
             "margin": s.get("margin"),
+            # BRAIN's own verdict on the alpha, computed server-side and
+            # read-only: INFERIOR / AVERAGE / GOOD / EXCELLENT / SPECTACULAR.
+            "grade": (self.alpha or {}).get("grade"),
             "checks_passed": _checks_passed(s),
             "error": self.error,
             "cached": self.cached,
@@ -88,6 +92,33 @@ def _checks_passed(is_stats: dict) -> Optional[str]:
         return None
     passed = sum(1 for c in checks if c.get("result") == "PASS")
     return f"{passed}/{len(checks)}"
+
+
+#: ``testPeriod`` is an ISO-8601 duration in years and months. BRAIN only ever
+#: emits the ``PnYnM`` shape, and rejects anything else, so the CLI accepts the
+#: shorthands a person would actually type and normalizes them.
+_TEST_PERIOD = re.compile(r"^P?(?:(\d+)Y)?(?:(\d+)M)?$", re.IGNORECASE)
+
+
+def normalize_test_period(value: Optional[str]) -> Optional[str]:
+    """Turn ``1y``, ``18m``, ``1y6m`` or ``P1Y0M`` into ``P1Y6M`` form.
+
+    A test period reserves the tail of the backtest window as out-of-sample.
+    ``P0Y0M`` (the default) means the whole window is in-sample.
+    """
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    match = _TEST_PERIOD.match(text)
+    if not match or not any(match.groups()):
+        raise ValueError(
+            f"invalid test period {value!r}; expected forms like '1y', '6m', "
+            "'1y6m' or 'P1Y0M'"
+        )
+    years, months = match.groups()
+    return f"P{int(years or 0)}Y{int(months or 0)}M"
 
 
 def build_settings(**overrides) -> dict:

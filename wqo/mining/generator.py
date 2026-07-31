@@ -30,6 +30,10 @@ class GenerationSpec:
     #: ``budget`` caps the job list, so an N-variant sweep divides the number of
     #: distinct expressions actually simulated by N.
     variants: Optional[tuple[dict, ...]] = None
+    #: Settings forced on top of whichever variant or regime is in play, for
+    #: knobs that are not part of the sweep. A caller pinning only ``decay``
+    #: keeps each template's own neutralization and truncation.
+    overrides: Optional[dict] = None
     template_names: Optional[tuple[str, ...]] = None
     max_fields: int = 40
     budget: int = 40
@@ -93,7 +97,7 @@ def generate(
                         region=spec.region,
                         delay=spec.delay,
                         universe=spec.universe,
-                        **variant,
+                        **dict(variant, **(spec.overrides or {})),
                     )
                     jobs.append(
                         SimJob(
