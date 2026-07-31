@@ -99,6 +99,35 @@ Gotchas that cost real simulations to discover — see `docs/fastexpr.md`:
 
 ---
 
+## Simulation settings
+
+Every field the web UI's settings panel exposes has a flag on `sim run`,
+`sim batch` and `mine`; defaults live in `DEFAULT_SETTINGS` (`wqo/config.py`).
+`--test-period` takes `1y`, `6m`, `1y6m` or `P1Y6M` and defaults to none, so the
+whole window is in-sample. Reserving a tail shortens the window the reported
+Sharpe covers — numbers from different test periods do not compare.
+
+On `mine`, leave `--decay` and `--truncation` alone unless the user asks: unset,
+each template runs under the regime it declares in `config.REGIMES`, one slot per
+expression. `--neutralizations` turns the run into a sweep, which multiplies jobs
+without adding expressions and, because `--budget` caps the job list, cuts the
+number of distinct ideas actually tested.
+
+---
+
+## Grade
+
+Alpha records carry a read-only `grade` BRAIN computes: `INFERIOR`, `AVERAGE`,
+`GOOD`, `EXCELLENT`, `SPECTACULAR`. `sim run`, `mine` and `gate` all report it,
+and `alpha list --grade` filters on it.
+
+It is not an eligibility signal. `is.checks` and the gate thresholds decide what
+may be submitted; a `SPECTACULAR` alpha with a failing check is still blocked.
+Quote it when reporting an alpha, never in place of the check result — and it
+never justifies submitting without the user's explicit yes.
+
+---
+
 ## Workflow
 
 ```

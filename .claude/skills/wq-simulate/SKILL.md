@@ -28,11 +28,29 @@ exhausted · `4` submission refused.
 ```
 
 Returns JSON: `alpha_id`, `url`, `sharpe`, `fitness`, `turnover`, `returns`,
-`drawdown`, `margin`, `checks_passed` (e.g. `"6/8"`).
+`drawdown`, `margin`, `grade`, `checks_passed` (e.g. `"6/8"`).
+
+`grade` is BRAIN's own verdict — `INFERIOR`, `AVERAGE`, `GOOD`, `EXCELLENT`,
+`SPECTACULAR` — computed server-side. It is a hint about where to spend
+attention, not an eligibility signal: `checks_passed` and `wq-analyze` decide
+what can actually be submitted.
 
 Settings flags all have defaults; only pass what differs. Simulations can take a
 few minutes — the command polls on the server's own `Retry-After` cadence and
 blocks until done.
+
+## Out-of-sample tail
+
+`--test-period` holds back the end of the backtest window:
+
+```bash
+.venv/bin/python -m wqo sim run --code "rank(close)" --test-period 1y
+```
+
+Accepts `1y`, `6m`, `1y6m` or the ISO form `P1Y6M`. Default is none — the whole
+window is in-sample. Reserving a tail shortens the window the reported Sharpe is
+measured over, so numbers from different test periods are not comparable. Use it
+to sanity-check one promising alpha, not as a standing default.
 
 ## Batches and sweeps
 

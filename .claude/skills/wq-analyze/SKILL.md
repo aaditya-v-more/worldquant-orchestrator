@@ -32,6 +32,16 @@ prints a per-criterion PASS/FAIL table. Exit code 0 means clean, 1 means blocked
 Add `--json` for structured output, `--no-correlations` to skip the (slow)
 correlation calls.
 
+The header carries BRAIN's own grade when the record has one:
+
+```
+Alpha 1YzRpvlm  [grade EXCELLENT]
+```
+
+Grade never affects the verdict. It runs `INFERIOR` → `AVERAGE` → `GOOD` →
+`EXCELLENT` → `SPECTACULAR`, and a `SPECTACULAR` alpha still gets blocked by a
+failing check. Report it alongside the outcome; do not present it as one.
+
 ## Individual pieces
 
 ```bash

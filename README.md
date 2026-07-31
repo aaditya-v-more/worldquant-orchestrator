@@ -55,6 +55,7 @@ python -m wqo data operators
 
 # backtesting
 python -m wqo sim run --code "-ts_delta(ts_backfill(close, 60), 5)"
+python -m wqo sim run --code "rank(close)" --neutralization NONE --test-period 1y
 python -m wqo sim batch --file ideas.json
 python -m wqo sim recent
 
@@ -62,6 +63,7 @@ python -m wqo sim recent
 python -m wqo alpha get|pnl|yearly <alpha_id>
 python -m wqo alpha corr <alpha_id> [--prod]
 python -m wqo alpha list --status UNSUBMITTED --min-sharpe 1.25
+python -m wqo alpha list --grade EXCELLENT
 python -m wqo alpha tag <alpha_id> --name "..." --color GREEN --tags a,b
 
 # submission
@@ -87,6 +89,47 @@ python -m wqo discover
 
 Everything prints JSON. Exit codes: `0` ok, `1` error, `2` auth/biometric,
 `3` budget exhausted, `4` submission refused.
+
+## Simulation settings
+
+Every field the web UI's settings panel exposes is a flag on `sim run`,
+`sim batch` and `mine`, defaulting to `DEFAULT_SETTINGS` in `wqo/config.py`:
+
+| UI field | Flag | Default |
+|---|---|---|
+| Language | *fixed* — `FASTEXPR` | |
+| Instrument Type | `--instrument-type` | `EQUITY` |
+| Region | `--region` | `USA` |
+| Universe | `--universe` | `TOP3000` |
+| Delay | `--delay` | `1` |
+| Neutralization | `--neutralization` | `SUBINDUSTRY` |
+| Decay | `--decay` | `6` |
+| Truncation | `--truncation` | `0.08` |
+| Pasteurization | `--pasteurization` | `ON` |
+| Unit Handling | `--unit-handling` | `VERIFY` |
+| Nan Handling | `--nan-handling` | `OFF` |
+| Test period | `--test-period` | none (`P0Y0M`) |
+
+`--test-period` takes `1y`, `6m`, `1y6m` or the ISO form `P1Y6M`; anything else
+is rejected rather than silently backtesting over the wrong window.
+
+On `mine`, `--decay` and `--truncation` are unset by default so each template
+runs under the regime it declares (`config.REGIMES`). Pass them to pin one knob,
+or `--neutralizations` to sweep — a sweep multiplies jobs without adding
+expressions, and `--budget` caps the total.
+
+## Alpha grade
+
+Alpha records carry a `grade` BRAIN computes itself:
+
+```
+INFERIOR  <  AVERAGE  <  GOOD  <  EXCELLENT  <  SPECTACULAR
+```
+
+It comes free on the record, so `sim run`, `mine` and `gate` all report it, and
+`alpha list --grade EXCELLENT` filters on it. It is read-only and purely
+informational — `is.checks` plus the local thresholds are what decide whether an
+alpha may be submitted.
 
 ## Safety model
 

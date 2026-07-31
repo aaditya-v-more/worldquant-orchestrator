@@ -25,6 +25,28 @@ Every website tab probed against the API from account `<your account id>` (`leve
 Also reachable: `/events` (11 webinars), `/users/self/messages`,
 `/users/self/agreements`, `/users/self/activities`.
 
+## What an alpha record contains
+
+`GET /alphas/{id}` returns everything in one call — no follow-up request is
+needed for the fields below:
+
+| Field | Notes |
+|---|---|
+| `settings` | the full settings panel, plus `startDate` / `endDate` |
+| `regular.code` | the expression, with `description` and `operatorCount` |
+| `is` | `sharpe`, `fitness`, `turnover`, `returns`, `drawdown`, `margin`, `pnl`, `bookSize`, `longCount`, `shortCount` |
+| `is.checks` | the same array `/alphas/{id}/check` returns, already resolved |
+| `grade` | `INFERIOR` / `AVERAGE` / `GOOD` / `EXCELLENT` / `SPECTACULAR` |
+| `stage`, `status` | `IS` / `OS`, `UNSUBMITTED` / `ACTIVE` |
+| `classifications` | e.g. `DATA_USAGE:SINGLE_DATA_SET` |
+| `name`, `tags`, `color`, `category`, `favorite`, `hidden` | the editable properties |
+
+`grade` and `classifications` are computed server-side and read-only — `PATCH`
+only accepts the editable properties in the last row.
+
+The `settings` block echoes `startDate` / `endDate` rather than the `testPeriod`
+that produced them; `testPeriod` is a request-side field only.
+
 ## There is no leaderboard endpoint
 
 All of these 404:

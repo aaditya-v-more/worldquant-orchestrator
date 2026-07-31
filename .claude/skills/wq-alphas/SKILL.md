@@ -28,14 +28,32 @@ exhausted · `4` submission refused.
 ```
 
 Filters: `--status` (`UNSUBMITTED`, `ACTIVE`, ...), `--region`, `--universe`,
-`--delay`, `--min-sharpe`, `--min-fitness`, `--color`, `--tag`, `--order`,
-`--limit`. `--order` takes any API field, prefix `-` for descending.
+`--delay`, `--min-sharpe`, `--min-fitness`, `--color`, `--tag`, `--grade`,
+`--order`, `--limit`. `--order` takes any API field, prefix `-` for descending.
 
 The workhorse query for "what should I look at next" is:
 
 ```bash
 .venv/bin/python -m wqo alpha list --status UNSUBMITTED --min-sharpe 1.25 --order -is.fitness
 ```
+
+## Grade
+
+Every record carries a `grade` BRAIN computed itself — `INFERIOR`, `AVERAGE`,
+`GOOD`, `EXCELLENT`, `SPECTACULAR`. It is read-only; nothing here or on the
+platform lets you set it.
+
+```bash
+.venv/bin/python -m wqo alpha list --status UNSUBMITTED --grade EXCELLENT
+```
+
+Unlike the other filters this one is matched locally against records already
+fetched, so combine it with `--limit` generously — a page that yields no matches
+still counts against the pages read, not against `--limit`.
+
+Use grade to triage, never to decide. An `EXCELLENT` alpha can still fail
+`SELF_CORRELATION` or `MATCHES_COMPETITION`; run `wq-analyze` before treating
+anything as submittable.
 
 ## Organizing
 

@@ -40,12 +40,30 @@ Key flags:
 | `--search` | restrict to datafields matching text |
 | `--templates` | comma-separated template names |
 | `--neutralizations` | sweep neutralizations, e.g. `SUBINDUSTRY,MARKET` |
+| `--decay` `--truncation` | pin one knob; unset means the template decides |
+| `--test-period` | out-of-sample tail, e.g. `1y`. Default none |
 | `--max-fields` | how many datafields to draw from (highest coverage first) |
 | `--budget` | hard cap on simulations this run |
 | `--seed` | reproducible candidate sampling |
 
 Expressions already simulated are skipped automatically, so repeated runs explore
 new ground instead of re-testing the same ideas.
+
+## Settings come from the template, not from you
+
+Each template declares a regime — momentum, reversion, value, balanced — and
+`config.REGIMES` supplies its neutralization, decay and truncation. Left alone,
+every expression runs once under its own regime, so one candidate costs exactly
+one simulation slot.
+
+Passing `--neutralizations` turns that into a sweep: every expression is
+simulated under every neutralization listed. Since `--budget` caps the job list,
+an N-way sweep divides the number of *distinct* expressions actually tested by
+N. On a one-slot account that trades search breadth for redundancy — sweep when
+refining a known-good idea, not when hunting for one.
+
+`--decay` and `--truncation` pin a single knob and leave the rest of each
+template's regime intact.
 
 ## Workflow
 
