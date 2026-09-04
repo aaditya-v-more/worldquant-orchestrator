@@ -21,3 +21,10 @@ ideas/
 # alpha expressions and their statistics are the author's IP, and this repo has
 # more than one user — provenance stays on the machine that produced it
 provenance/
+
+# research plans hold expressions and their statistics, same as ideas/
+.qoder/plans/
+
+# third-party reference material. Keep a copy locally if you have one; this
+# repo does not redistribute it.
+*.pdf

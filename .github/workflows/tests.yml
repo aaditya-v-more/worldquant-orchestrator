@@ -47,7 +47,7 @@ jobs:
 
       - name: Reject tracked alpha expression dumps
         run: |
-          bad=$(git ls-files | grep -E '^(ideas|provenance)/' || true)
+          bad=$(git ls-files | grep -E '^(ideas|provenance)/|^\.qoder/plans/' || true)
           if [ -n "$bad" ]; then
             echo "::error::Alpha expressions and statistics stay local. See CONTRIBUTING.md:"
             echo "$bad"; exit 1
