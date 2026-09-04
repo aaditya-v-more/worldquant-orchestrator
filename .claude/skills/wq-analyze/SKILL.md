@@ -8,7 +8,7 @@ description: Analyze a WorldQuant BRAIN alpha's performance — IS statistics, P
 ## Before running anything
 
 ```bash
-cd /path/to/worldquant-orchestrator
+cd /path/to/worldquant-orchestrator   # the repo root
 ```
 
 All commands below use `.venv/bin/python -m wqo`. If `.venv` is missing, or you

@@ -1,0 +1,32 @@
+name: Feature request
+description: A command, flag, dataset surface, or skill that should exist
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Worth checking first: [`docs/api-map.md`](../blob/main/docs/api-map.md)
+        records which endpoints exist, which 404, and which are gated at 403.
+        There is no leaderboard endpoint and `GET /alphas` is 405 — those are
+        deliberate platform limits, not gaps to work around.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you are trying to do
+      description: The research task, not the implementation you have in mind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like it to do
+    validations:
+      required: true
+
+  - type: input
+    id: endpoint
+    attributes:
+      label: Endpoint or surface involved
+      description: If you know it. `wqo api GET /some/path` reaches anything unwrapped.

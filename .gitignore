@@ -9,6 +9,12 @@ data/
 *session*.json
 .DS_Store
 
+# per-user account snapshot written by `wqo account snapshot` — holds your
+# account id, level, rank and learned concurrency. Every value is per-user and
+# goes stale, so it never belongs in a shared branch.
+ACCOUNT.local.md
+*.local.md
+
 # generated alpha candidate batches — inputs to `sim batch`, not source
 ideas/
 

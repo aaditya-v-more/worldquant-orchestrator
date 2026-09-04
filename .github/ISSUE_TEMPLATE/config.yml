@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security or credential-exposure report
+    url: https://github.com/aaditya-v-more/worldquant-orchestrator/security/advisories/new
+    about: Report privately. Never open a public issue for these.
+  - name: WorldQuant BRAIN platform support
+    url: https://support.worldquantbrain.com
+    about: Questions about the platform, your account, or competitions — not this tool.

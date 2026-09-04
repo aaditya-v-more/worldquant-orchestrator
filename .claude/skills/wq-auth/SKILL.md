@@ -8,7 +8,7 @@ description: Authenticate against WorldQuant BRAIN and check account status, quo
 ## Before running anything
 
 ```bash
-cd /path/to/worldquant-orchestrator
+cd /path/to/worldquant-orchestrator   # the repo root
 ```
 
 All commands below use `.venv/bin/python -m wqo`. If `.venv` is missing, or you
@@ -21,8 +21,9 @@ exhausted · `4` submission refused.
 
 ## What this account can do
 
-`<your account id>`, `level: NONE` — the lowest tier. Consequences worth knowing before
-planning any work:
+Run `wqo account snapshot` and read `ACCOUNT.local.md` for your own account id,
+level and learned concurrency. At the lowest tiers (`NONE`/`BRONZE`) the
+consequences worth knowing before planning any work:
 
 - **~1 simulation slot.** Batches run near-sequentially; 40 candidates is roughly
   an hour of wall clock. Concurrency is learned from 429s and persisted — do not

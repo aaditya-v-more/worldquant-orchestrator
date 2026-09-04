@@ -1,6 +1,6 @@
 # API reachability map
 
-Every website tab probed against the API from account `<your account id>` (`level: NONE`),
+Every website tab probed against the API from a `level: NONE` account,
 2026-07-30. Re-run the probe yourself with:
 
 ```bash
@@ -69,7 +69,7 @@ inside each of *your* competition records:
 
 ```json
 { "rank": 246107, "user": "<your account id>", "score": 0.0, "alphas": 0,
-  "level": null, "university": "<your university>", "country": "IN" }
+  "level": null, "university": "<your university>", "country": "<your country>" }
 ```
 
 Your position among everyone — never who is above you or what they wrote.

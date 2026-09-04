@@ -13,7 +13,7 @@ and submission. Everything the website does is reachable from here.
 Always from the repo root, always through the venv:
 
 ```bash
-cd /path/to/worldquant-orchestrator
+cd /path/to/worldquant-orchestrator   # the repo root
 .venv/bin/python -m wqo <command>
 ```
 
@@ -70,8 +70,12 @@ records alone means it returns on the next run.
 
 ## Account facts
 
-Current account is `<your account id>`, `level: NONE` — the lowest tier. This shapes
-everything:
+Read your own account id, level and learned concurrency from
+`ACCOUNT.local.md` — run `wqo account snapshot` to write it. It is gitignored,
+because every value in it is per-user.
+
+The table below is what a **low-tier account** (`NONE`/`BRONZE`) can expect.
+Higher tiers lift these limits; do not treat the numbers as universal:
 
 | Constraint | Consequence |
 |---|---|

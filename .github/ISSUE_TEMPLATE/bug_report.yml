@@ -1,0 +1,61 @@
+name: Bug report
+description: Something in the CLI, the client, or a skill behaves incorrectly
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing: please do not paste alpha expressions, statistics, or
+        your account id into a public issue. Redact them — the shape of the
+        problem is almost always enough. Security problems go through
+        [SECURITY.md](../blob/main/SECURITY.md) instead.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you ran, and what it did.
+      placeholder: |
+        $ .venv/bin/python -m wqo sim run --region USA ...
+        ... output, with expressions and ids redacted ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true
+
+  - type: input
+    id: exit-code
+    attributes:
+      label: Exit code
+      description: "0 success · 1 error or blocked gate · 2 auth · 3 budget · 4 submission refused"
+
+  - type: dropdown
+    id: level
+    attributes:
+      label: Account level
+      description: Many limits are tier-dependent, so this changes what is expected behaviour.
+      options: ["NONE", "BRONZE", "SILVER", "GOLD", "Not relevant / offline"]
+    validations:
+      required: true
+
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      placeholder: "3.12.4"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: "`.venv/bin/python -m pytest tests -q` passes on my checkout"
+        - label: I have redacted expressions, alpha ids, and account details
+          required: true

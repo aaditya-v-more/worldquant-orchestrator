@@ -8,7 +8,7 @@ description: Read WorldQuant BRAIN account-level information — competition sta
 ## Before running anything
 
 ```bash
-cd /path/to/worldquant-orchestrator
+cd /path/to/worldquant-orchestrator   # the repo root
 ```
 
 All commands below use `.venv/bin/python -m wqo`. If `.venv` is missing, or you

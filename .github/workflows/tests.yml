@@ -1,0 +1,63 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    name: pytest (${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # The suite is offline by design: no network, no credentials, no BRAIN
+      # account. If a test ever needs one of those, it belongs somewhere else.
+      - name: Run tests
+        run: python -m pytest tests -q
+
+  leak-check:
+    name: no secrets or alpha IP in the tree
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reject credential and per-user files
+        run: |
+          bad=$(git ls-files | grep -iE '(credentials|session).*\.json$|^ACCOUNT\.local\.md$|\.local\.md$' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::These files must never be tracked:"; echo "$bad"; exit 1
+          fi
+
+      - name: Reject tracked alpha expression dumps
+        run: |
+          bad=$(git ls-files | grep -E '^(ideas|provenance)/' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::Alpha expressions and statistics stay local. See CONTRIBUTING.md:"
+            echo "$bad"; exit 1
+          fi
+
+      - name: Scan tracked files for credential-shaped strings
+        run: |
+          hits=$(git grep -nIE \
+            '(ghp_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----)' \
+            -- . ':!*.pdf' || true)
+          if [ -n "$hits" ]; then
+            echo "::error::Possible credential committed:"; echo "$hits"; exit 1
+          fi
