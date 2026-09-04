@@ -4,6 +4,14 @@ End-to-end control of [WorldQuant BRAIN](https://platform.worldquantbrain.com)
 from any coding agent: data discovery, alpha generation, backtesting, analysis, and
 submission — driven through BRAIN's official REST API rather than the web UI.
 
+![One request — build an alpha on analyst EPS estimates, backtest it, decide whether it is submittable — running end to end in an agent window](docs/media/demo.gif)
+
+You describe the idea in a sentence, in the editor chat panel you already have
+open. The agent picks the data field out of the catalog, writes the FASTEXPR,
+backtests it through the API, sweeps the variants, runs the submission gate —
+and then stops and asks you before it sends anything.
+[Full-resolution video](docs/media/demo.mp4).
+
 Two layers:
 
 - **`wqo/`** — a Python client and CLI. Usable on its own.
