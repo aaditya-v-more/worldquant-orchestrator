@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256"
+     role="img" aria-label="worldquant-orchestrator">
+  <title>worldquant-orchestrator</title>
+
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="256" y2="256" gradientUnits="userSpaceOnUse">
+      <stop offset="0"    stop-color="#16213C"/>
+      <stop offset="0.55" stop-color="#0D1425"/>
+      <stop offset="1"    stop-color="#070B14"/>
+    </linearGradient>
+
+    <linearGradient id="ring" x1="52" y1="204" x2="204" y2="52" gradientUnits="userSpaceOnUse">
+      <stop offset="0"   stop-color="#22D3EE"/>
+      <stop offset="0.5" stop-color="#5B8DEF"/>
+      <stop offset="1"   stop-color="#A78BFA"/>
+    </linearGradient>
+
+    <linearGradient id="curve" x1="84" y1="154" x2="170" y2="90" gradientUnits="userSpaceOnUse">
+      <stop offset="0"   stop-color="#34D399"/>
+      <stop offset="1"   stop-color="#7DF1DC"/>
+    </linearGradient>
+
+    <radialGradient id="glow" cx="128" cy="132" r="76" gradientUnits="userSpaceOnUse">
+      <stop offset="0"   stop-color="#2DD4BF" stop-opacity="0.20"/>
+      <stop offset="0.7" stop-color="#2DD4BF" stop-opacity="0.05"/>
+      <stop offset="1"   stop-color="#2DD4BF" stop-opacity="0"/>
+    </radialGradient>
+
+    <clipPath id="inner">
+      <circle cx="128" cy="128" r="69"/>
+    </clipPath>
+  </defs>
+
+  <!-- tile -->
+  <rect width="256" height="256" rx="58" fill="url(#tile)"/>
+  <rect x="1" y="1" width="254" height="254" rx="57" fill="none"
+        stroke="#FFFFFF" stroke-opacity="0.10" stroke-width="2"/>
+
+  <!-- inner glow + chart rules -->
+  <circle cx="128" cy="132" r="76" fill="url(#glow)"/>
+  <g clip-path="url(#inner)" stroke="#FFFFFF" stroke-opacity="0.07" stroke-width="2">
+    <line x1="56" y1="98"  x2="200" y2="98"/>
+    <line x1="56" y1="128" x2="200" y2="128"/>
+    <line x1="56" y1="158" x2="200" y2="158"/>
+  </g>
+
+  <!-- the loop: data -> mine -> backtest -> gate -> submit, and around again -->
+  <g fill="url(#ring)" stroke="none">
+    <path d="M 199.42 102.01 A 76 76 0 1 1 151.49 55.72"
+          fill="none" stroke="url(#ring)" stroke-width="13" stroke-linecap="round"/>
+    <polygon points="171.84,63.07 146.89,67.30 155.45,43.80"/>
+  </g>
+
+  <!-- the alpha: a signal that pays -->
+  <path d="M 84 154 L 106 130 L 124 145 L 148 110 L 170 90"
+        fill="none" stroke="url(#curve)" stroke-width="13"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="170" cy="90" r="9.5" fill="#0D1425"/>
+  <circle cx="170" cy="90" r="6"   fill="#7DF1DC"/>
+</svg>
