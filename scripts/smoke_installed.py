@@ -29,6 +29,11 @@ with tempfile.TemporaryDirectory(prefix="wqo-installed-") as directory:
     assert run(str(command), "--version").stdout.strip() == f"wqo {wqo.__version__}"
     run(str(command), "--help")
     run(str(command), "sim", "run", "--help")
+    run(str(command), "account", "snapshot", "--help")
+    missing_auth = subprocess.run([str(command), "account", "snapshot"],
+                                  env=env, cwd=root, capture_output=True, text=True)
+    assert missing_auth.returncode == 2, missing_auth.stderr
+    assert not (root / "ACCOUNT.local.md").exists()
     state = json.loads(run(str(command), "state").stdout)
     assert state["data_dir"] == str(root / "state")
     assert not (root / "state").exists()

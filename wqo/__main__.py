@@ -446,6 +446,26 @@ def cmd_mine(args) -> int:
 
 
 def cmd_account(args) -> int:
+    if args.account_command == "snapshot":
+        from pathlib import Path
+        from . import snapshot
+
+        path = Path.cwd() / "ACCOUNT.local.md"
+        if path.is_symlink() or (path.exists() and not args.overwrite):
+            print("snapshot refused: ACCOUNT.local.md exists; preserve your notes or "
+                  "use --overwrite for a regular file", file=sys.stderr)
+            return EXIT_ERROR
+        session = _session(args)
+        try:
+            with _ledger() as ledger:
+                result = snapshot.collect(session, ledger)
+            snapshot.write(result, Path.cwd(), overwrite=args.overwrite)
+        except (OSError, ValueError) as exc:
+            print(f"snapshot refused: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+        emit({"path": str(path), "written": True})
+        return EXIT_OK
+
     session = _session(args)
     command = args.account_command
 
@@ -708,6 +728,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     acct_sub = acct.add_subparsers(dest="account_command", required=True)
     acct_sub.add_parser("status", help="your rank, score, and level progress")
+    snap = acct_sub.add_parser("snapshot", help="write private ACCOUNT.local.md in the current directory")
+    snap.add_argument("--overwrite", action="store_true", help="replace existing account notes")
     comps = acct_sub.add_parser("competitions", help="list competitions")
     comps.add_argument("--mine", action="store_true", help="only ones you joined")
     comps.add_argument("--raw", action="store_true", help="full API records")

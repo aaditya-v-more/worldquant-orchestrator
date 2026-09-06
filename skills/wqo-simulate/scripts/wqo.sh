@@ -32,7 +32,7 @@ fi
 trap 'rmdir "$project/.wqo/install.lock"' EXIT
 if command -v uv >/dev/null 2>&1; then
   uv venv --python 3.12 --allow-existing "$venv" >&2
-  uv pip install --python "$venv/bin/python" --default-index https://pypi.org/simple 'wqo==0.1.0' >&2
+  uv pip install --python "$venv/bin/python" --default-index https://pypi.org/simple 'wqo==0.1.1' >&2
 else
   python_bin=""
   for candidate in python3.14 python3.13 python3.12 python3; do
@@ -45,7 +45,7 @@ else
     exit 1
   fi
   "$python_bin" -m venv "$venv" >&2
-  "$venv/bin/python" -m pip install --index-url https://pypi.org/simple 'wqo==0.1.0' >&2
+  "$venv/bin/python" -m pip install --index-url https://pypi.org/simple 'wqo==0.1.1' >&2
 fi
 if ! compatible "$venv/bin/wqo"; then
   echo "WQO installation did not provide a compatible CLI; command was not run." >&2

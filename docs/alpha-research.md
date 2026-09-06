@@ -1,177 +1,148 @@
 # Alpha research reference
 
-Distilled from *Quantitative Alpha Research: WorldQuant BRAIN* (Updated Edition,
-2026-06-13) — the source PDF is `worldquant .pdf` in the repo root. Only the
-parts that change how this tool behaves are recorded here; background material
-and unverified compensation figures are noted at the bottom rather than encoded.
+Reviewed against WQO 0.1.0 on 2026-09-07. This reference separates local code
+behavior from research examples. The earlier privately supplied report titled
+*Quantitative Alpha Research: WorldQuant BRAIN* (dated 2026-06-13) has no verified
+author or public source link. It is not distributed here or treated as an
+authoritative citation. Traceable references appear below.
 
-Where a number here conflicts with what BRAIN's own `/check` endpoint returns,
-**BRAIN wins**. This file drives our local pre-filter, not the real gate.
+Expressions and simulation settings are sent to BRAIN. Examples are illustrative
+research hypotheses; backtest results do not guarantee future performance.
 
----
+## Local gate defaults
 
-## Passing criteria (delay 1)
+These are WQO defaults from [config.py](../wqo/config.py), implemented in
+[gate.py](../wqo/gate.py), not universal BRAIN acceptance requirements. BRAIN's
+returned checks determine platform eligibility; WQO can additionally refuse an
+alpha under its local policy. A passing local report cannot guarantee acceptance.
 
-| Metric | Requirement | Where enforced |
-|---|---|---|
-| Sharpe | > 1.25 | `GateThresholds.min_sharpe` |
-| Fitness | > 1.0 | `GateThresholds.min_fitness` |
-| Turnover | 1% – 70% | `min_turnover` / `max_turnover` |
-| Drawdown | < 10% | `max_drawdown` |
-| Weight concentration | < 10% | BRAIN's `CONCENTRATED_WEIGHT` check |
-| Self-correlation | < 0.7 **or** Sharpe >10% better than the correlated alpha | `max_self_correlation` + `self_correlation_sharpe_exemption` |
+| Metric | Local rule |
+|---|---|
+| Sharpe | Absolute value ≥ 1.25 |
+| Fitness | Absolute value ≥ 1.0 |
+| Turnover | 1%–70%, inclusive; missing value fails |
+| Drawdown | Absolute value ≤ 10%; missing value is skipped |
+| Self-correlation | < 0.70 when available; otherwise skipped |
+| Production correlation | < 0.70 when available; otherwise skipped |
+| Weight concentration | Read BRAIN's returned check and limit; no separate local 10% rule |
 
-The self-correlation exemption matters: crossing 0.7 is not automatically fatal
-if the new alpha is meaningfully stronger than the one it duplicates. Our gate
-still marks it FAIL, because evaluating the exemption needs the other alpha's
-Sharpe — the criterion's `detail` says so rather than pretending it's final.
+The local gate uses absolute Sharpe and fitness. A negative signal may warrant
+inversion and a new backtest; the gate does not invert it automatically. Inspect
+BRAIN's checks on the actual expression before considering submission.
 
-## Fitness
+At self-correlation ≥ 0.70, WQO fails the local criterion and mentions a configured
+10% Sharpe-improvement exemption. It cannot evaluate that exemption from the
+correlation value alone. Treat the message as a diagnostic, not a verified
+current platform entitlement. Skipped checks are not passing measurements.
+
+## Fitness interpretation
+
+The working formula retained from earlier research notes is:
 
 ```
 Fitness = Sharpe × sqrt( |Returns| / max(Turnover, 0.125) )
 ```
 
-This is why fitness fails while Sharpe passes: fitness is Sharpe discounted by
-turnover. The `max(Turnover, 0.125)` floor means trading less than 12.5% a day
-earns no further fitness credit — below that, only returns and Sharpe help.
+A public primary BRAIN definition was not independently verified in this review;
+confirm it in the signed-in Learn documentation before relying on it. WQO uses
+the `fitness` value returned by BRAIN rather than recomputing it with this formula.
 
-Practical consequence: an alpha with Sharpe 1.26 and turnover 0.34 needs
-returns near 0.28 to reach fitness 1.0. Cutting turnover is usually easier than
-raising returns.
+Under this formula, Sharpe 1.26 and turnover 0.34 require absolute returns of
+`0.34 / 1.26² ≈ 0.2142` for fitness 1.0. Returns and turnover use decimal units.
+Below the 0.125 turnover floor, lowering turnover alone does not change the
+formula's denominator. Changing decay can also change returns and Sharpe, so
+this arithmetic is not a promise that a parameter change improves fitness.
 
----
+## Example patterns to test
 
-## Proven patterns
-
-**Mean reversion with group ranking.** Grouping by subindustry strips
-sector-level bias so what's left is the stock-specific move.
+**Group-ranked reversal.** Rank a negative price change within a subindustry:
 
 ```
 group_rank(-ts_delta(price_field, N), subindustry)
 ```
 
-The *101 Formulaic Alphas* #4 instance of it:
+This is the repository's `group_rank_reversal` pattern. Group ranking does not
+by itself establish portfolio neutrality or future predictive power.
+
+**Correct attribution for Alpha #4.** Zura Kakushadze's *101 Formulaic Alphas*
+(2016), [Appendix A, page 8](https://arxiv.org/pdf/1601.00991v3#page=8), gives:
 
 ```
-group_rank(-ts_delta(log(close), 1), subindustry)
+(-1 * Ts_Rank(rank(low), 9))
 ```
 
-**Liquidity-gated execution.** Trade only when the day's volume clears the
-20-day average, cutting market impact. `adv20` is a real field in `pv1` — use it
-rather than recomputing `ts_mean(volume, 20)`.
+That is the paper's notation, not a tested BRAIN command. The previously shown
+`group_rank(-ts_delta(log(close), 1), subindustry)` is a different expression and
+must not be attributed to Alpha #4.
+
+**Conditional updates.** The `liquidity_gated` template uses:
 
 ```
 trade_when(volume > adv20, alpha_signal, -1)
 ```
 
-The `-1` is the fallback when the condition is false.
+The third argument is an exit trigger, not a fallback signal value. Check the
+operator definition available to your account before use. No reduction in market
+impact or improvement in returns is established by this example. Confirm `adv20`
+and every other input for the selected region, universe and delay.
 
-**Fundamental data repair.** Fundamentals report quarterly; between report
-dates the field is empty. Backfill carries the last known value forward.
+**Sparse inputs.** `ts_backfill(fundamental_field, 60)` carries earlier observations
+into gaps within a chosen lookback. Inspect coverage, update frequency and data
+age first: 60 is an example, not a universal quarterly-data rule. Dense fields
+may not need backfill, and carrying stale values has its own consequences.
 
-```
-ts_backfill(fundamental_field, 60)
-```
+**Other data families.** For vector fields, consider available `vec_sum` or
+`vec_avg` operators; for estimates, investigate `ts_rank(estimate_field / close, N)`.
+Replace placeholders with compatible fields discovered using `wqo data fields`.
+No field ID here implies access for every account.
 
-N = 60 trading days is the norm for quarterly data. Skipping this is the most
-common reason a fundamental alpha looks like noise.
+See [mining/templates.py](../wqo/mining/templates.py) for `group_rank_reversal`,
+`liquidity_gated`, `BACKFILL`, `estimate_to_price`, `vector_mean_rank` and
+`vector_sum_zscore`. Their presence in code is not evidence of profitable results.
 
-**Alternative data.**
+## Diagnosing results
 
-| Type | Pattern | Example field |
-|---|---|---|
-| Social media buzz | `vec_sum(buzz_vector)` | `scl12_alltype_buzzvec` |
-| News sentiment | `vec_avg(news_vector)` | `nws12_afterhsz_sl` |
-| Analyst estimate revision | `ts_rank(estimate_field / close, N)` | `est_epsr / close` |
-
-All four families are implemented in `wqo/mining/templates.py` as
-`group_rank_reversal`, `liquidity_gated`, the `BACKFILL` wrapper, and
-`estimate_to_price` / `vector_mean_rank` / `vector_sum_zscore`.
-
----
-
-## Problem → fix
-
-| Symptom | Fix |
+| Symptom | Hypothesis to investigate |
 |---|---|
-| Low Sharpe | Smooth the signal — moving average or exponential decay |
-| Weight concentration | Backfill to remove NaN gaps that distort rankings; also `group_neutralize` or lower truncation |
-| High turnover | Raise `decay`; gate execution with `trade_when` |
-| Infrequent trading | Lower `decay`; check the field actually updates as often as you assume |
-| Self-correlation failure | Change the *datafield*, not the wrapper. Or change neutralization or region |
-| Overfitting | Validate out-of-sample; distrust parameters tuned to historical noise |
+| Low Sharpe | Signal noise, sign, economic rationale and stability across periods |
+| Concentrated weights | Sparse coverage, outliers, neutralization and truncation |
+| High turnover | Signal update frequency, decay and conditional updates |
+| Infrequent trading | Stale inputs, long smoothing windows or restrictive conditions |
+| Self-correlation failure | Whether the data or hypothesis adds distinct information |
+| Strong in-sample results | Selection bias and performance on held-out data |
 
-Note the weight-concentration entry: NaN gaps are a *cause* of concentrated
-weight, not just a data-quality nuisance. A field that is NaN for most names on
-most days concentrates the whole book into the few names that have data.
+These are investigation paths, not guaranteed fixes. Record failed candidates;
+repeatedly tuning on a held-out window turns it into another training window.
 
----
+## Grade and test period
 
-## Grade
+When present, BRAIN's read-only `grade` runs from `INFERIOR` through `AVERAGE`,
+`GOOD`, `EXCELLENT` and `SPECTACULAR`. WQO reports it and supports
+`wqo alpha list --grade EXCELLENT`. Grade does not determine the gate verdict.
 
-Every alpha record carries a `grade` alongside its `is` statistics — BRAIN's own
-one-word verdict, computed server-side and read-only:
+`--test-period` accepts `1y`, `6m`, `1y6m` or `P1Y6M`; WQO normalizes these into
+BRAIN's `testPeriod` setting. The default is `P0Y0M`, with no reserved tail.
+Compare in-sample statistics only over matching windows and settings. Reserving
+a tail alone does not establish that WQO has fetched or evaluated out-of-sample
+results; inspect which statistics the platform actually returns.
 
-```
-INFERIOR  <  AVERAGE  <  GOOD  <  EXCELLENT  <  SPECTACULAR
-```
+## Account eligibility and sources
 
-It arrives free on `GET /alphas/{id}`, so `wqo sim run`, `wqo mine` and
-`wqo gate` all report it without an extra call, and `wqo alpha list --grade
-EXCELLENT` filters on it.
+Use `wqo account status` for returned competition progress. Fixed point thresholds
+and consultant-invitation promises are omitted because current eligibility was
+not verified. Refer to the terms and rules shown for your own account.
 
-It is reported, never acted on. Submission eligibility is decided by the checks
-in `is.checks`, not by the grade, and the local thresholds in `wqo/config.py`
-are what pre-filter mining output. Treat a high grade as a hint that an alpha is
-worth a closer look, not as a substitute for the gate.
-
----
-
-## Test period
-
-`testPeriod` reserves the tail of the backtest window as out-of-sample, written
-as an ISO-8601 duration in years and months — `P1Y0M` for one year, `P0Y0M`
-(the default) to keep the whole window in-sample. The CLI accepts `1y`, `6m`,
-`1y6m` or the full `P1Y6M` and normalizes them.
-
-Reserving a year shortens the in-sample window the reported Sharpe is measured
-over, so IS numbers are not comparable across different test periods. Set it
-when you want a held-out check on a specific alpha, not as a default for mining.
-
----
-
-## Terminology
-
-- **Alpha** — expression producing a ranked signal across a universe, predicting future returns.
-- **Neutralization** — removing exposure to systematic factors (market, sector, industry).
-- **Turnover** — fraction of the portfolio replaced daily; drives transaction costs.
-- **Decay** — smoothing parameter that reduces turnover by weighting recent signals more heavily.
-- **Simulation** — backtest on historical data.
-
-BRAIN is a signal-aggregation system: contributors supply predictive signals,
-portfolio managers combine thousands of them to trade real capital. That framing
-explains the correlation limits — a signal that duplicates an existing one adds
-nothing to the aggregate.
-
----
-
-## Consultant levels
-
-| Level | Points |
-|---|---|
-| Bronze | 1,000 |
-| Silver | 5,000 |
-| Gold | 10,000 — eligible for consultant invitation |
-
-## Sources
-
-- *Finding Alphas* (Tulchinsky, ed.) — official WorldQuant methodology guide.
-- *101 Formulaic Alphas* — [arXiv:1601.00991](https://arxiv.org/abs/1601.00991). Catalogue of expressions; starting points, not finished strategies.
-- BRAIN Learn section — operators, datafields, simulation settings.
-
-## Deliberately not encoded
-
-- **Compensation figures.** The source lists ~$1.50 per accepted alpha, $500–600/month for consistent contributors, up to $1,500/month for top performers, all marked "reported". Unverified and irrelevant to how the tool behaves.
-- **Interview preparation questions.** Relevant to a Gold-level consultant application, not to alpha automation.
-- **Quantity vs. quality framing.** Background context; the mining loop already implements a middle path — broad generation, then refinement of the shortlist.
+- Zura Kakushadze, *101 Formulaic Alphas* (2016; arXiv v3, 18 March 2016),
+  [paper and publication record](https://arxiv.org/abs/1601.00991v3).
+  Appendix A supports the Alpha #4 attribution above.
+- Igor Tulchinsky (ed.), *Finding Alphas: A Quantitative Approach to Building
+  Trading Strategies*, second edition (Wiley, 2019),
+  [publisher record](https://onlinelibrary.wiley.com/doi/book/10.1002/9781119571278).
+  Further reading on research methods, not a source for current BRAIN quotas.
+- WorldQuant, [BRAIN platform](https://platform.worldquantbrain.com): signed-in
+  Learn documentation, operator descriptions and account-specific check results.
+  Access may require an account; current private documentation was not fetched
+  for this review.
+- WQO maintainers, [gate implementation](../wqo/gate.py) and
+  [defaults](../wqo/config.py), reviewed 2026-09-07. These support the local rules
+  above. This repository does not redistribute the referenced publications.

@@ -6,7 +6,7 @@ it by absolute path with Bash. Commands written as `wqo ...` in the skill mean
 `bash /absolute/path/to/this-skill/scripts/wqo.sh ...`.
 
 The runner reuses a compatible WQO CLI on PATH or in the project's `.wqo/venv`.
-When missing, it installs `wqo==0.1.0` from PyPI into that project environment,
+When missing, it installs `wqo==0.1.1` from PyPI into that project environment,
 using uv or Python 3.12+. It never installs skills or the CLI globally, edits
 shell profiles, or changes credentials. If both prerequisites are missing, show
 the prerequisite error; do not invent an installer. `WQO_PROJECT_DIR` can select
@@ -15,8 +15,11 @@ out of Git. The runner preserves CLI arguments, JSON output and exit codes.
 
 Before the first live operation, run `wqo state` and `wqo auth status`. These
 skills do not assume a particular account, level, operator count or concurrency.
-Use the installed CLI's `--help` for flags. Do not call `account snapshot`: it is
-not in WQO 0.1.0. Raw `api` accepts only reads.
+Use the installed CLI's `--help` for flags. `account snapshot` requires WQO 0.1.1+;
+use it only when `account --help` lists it.
+Otherwise use `auth status` and `account status`. Raw `api` accepts only reads.
+Expressions and settings are sent to BRAIN for simulation. Example expressions
+are research hypotheses, and backtest results do not guarantee future returns.
 
 - Never submit without an explicit yes in this conversation for that specific
   alpha. Installation, mining and a passing report do not authorize submission.

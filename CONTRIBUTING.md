@@ -7,8 +7,8 @@ simulation quota, or publish something irreversible.
 
 ## Getting set up
 
-Python 3.12 or newer. System Python on macOS is 3.9 and will not run this code —
-it uses `X | None` annotations and modern generics.
+Use Python 3.12+ and [uv](https://docs.astral.sh/uv/getting-started/installation/)
+on macOS or Linux. The system interpreter may not meet the package requirement.
 
 ```bash
 git clone https://github.com/aaditya-v-more/worldquant-orchestrator
@@ -28,12 +28,21 @@ If you want to run the tool against BRAIN rather than just work on it, you need
 your own [WorldQuant BRAIN](https://platform.worldquantbrain.com) account and a
 credentials file you write yourself:
 
-```bash
-printf '{"email": "you@example.com", "password": "..."}' > ~/.brain_credentials.json
-chmod 600 ~/.brain_credentials.json
+Create `~/.brain_credentials.json` privately in a text editor, using this format:
+
+```json
+{"email": "you@example.com", "password": "..."}
 ```
 
-Nothing in this repo writes, reads back, echoes or logs that file.
+```bash
+chmod 600 ~/.brain_credentials.json
+.venv/bin/python -m wqo auth status
+```
+
+Keep the password out of shell history, chat and logs. WQO's authentication flow
+reads the file internally; agents must not inspect or print its contents. If auth
+returns a Persona inquiry URL, complete it yourself in a browser, then run
+`.venv/bin/python -m wqo auth persona`. See [onboarding](docs/installation.md#authenticate).
 
 ## What not to commit
 
@@ -46,9 +55,11 @@ Public repo, live accounts. Four things must never land in a branch:
   crowdsourced platform, your edge. `ideas/` and `provenance/` are gitignored
   for exactly this reason. Do not add expression dumps, PnL series, or
   shortlists to tracked files — including in an issue or a PR description.
-- **Your account snapshot.** `ACCOUNT.local.md` holds your account id, level,
-  rank and learned concurrency. It is gitignored. Regenerate it with
-  `wqo account snapshot` rather than editing or sharing it.
+- **Your account details.** `auth status` and `account status` return private
+  account information. `.venv/bin/python -m wqo account snapshot` writes a
+  private, gitignored `ACCOUNT.local.md` in the current directory. It preserves
+  existing notes unless `--overwrite` is supplied. Available in WQO 0.1.1+;
+  it makes account reads, with no simulation/submission.
 - **Anyone's personal details** — account ids, university, country, rank — in
   docs or example payloads. Use `<your account id>` style placeholders. Real
   values were scrubbed out of the docs once already.
@@ -61,8 +72,9 @@ please add a regression test when you touch:
 
 - **gate thresholds** or anything in `wqo/config.py` that decides pass/fail
 - **slot and concurrency behaviour** — the shared ledger, the slot queue, the
-  learned-concurrency backoff. The three-process contention test is the only
-  one that catches the startup race.
+  learned-concurrency backoff. `tests/test_safety.py` includes
+  `test_three_processes_share_one_simulation_slot` and atomic reservation tests
+  that exercise contention between independent processes.
 - **budget accounting** — local days use US Eastern with DST. Submissions also
   enforce a rolling 24-hour cap until the platform reset convention is verified;
   pending/unknown writes retain quota across day boundaries
@@ -77,8 +89,8 @@ real simulation to find. The ones that bite most often:
 
 - No scientific notation. `1e-9` fails with `Unexpected character 'e'`. Write
   `0.000000001`.
-- Backfill sparse fundamentals with `ts_backfill(field, 60)`, or the field is
-  NaN most days and the book silently concentrates into a handful of names.
+- Inspect sparse fundamentals before testing `ts_backfill(field, 60)`;
+  missing values can concentrate weights and backfill can carry stale values.
 - Operator availability depends on account level. Check
   `wqo data operators` before assuming one exists.
 
@@ -113,14 +125,14 @@ Persona biometric check. Hitting a cap is information, not an obstacle.
 
 ## Agent skills
 
-`.claude/skills/wq-*` are the skill wrappers, symlinked to `.github/skills` and
-`.qoder/skills` so Copilot and Qoder read the same files. Edit the copy under
-`.claude/skills/` — the other two are symlinks, and editing through them works
-but makes the diff confusing.
+Edit tracked `skills/<name>/SKILL.md` files. Shared setup lives in
+`skill-support/`; run `.venv/bin/python scripts/sync_skills.py` after editing it.
+Every skill must work on its own without a clone, install missing WQO locally,
+and carry the credential, Persona, quota and submission boundaries.
 
-Every skill should stand alone: someone starting cold from that file should
-know which directory to run from, that a venv is required, and where the hard
-rules live. If you add a skill, add the bootstrap block the others carry.
+Installed agent folders are gitignored. Refresh them from local sources using
+the project-local command in [docs/skills.md](docs/skills.md#install-in-your-project);
+never edit an installed copy as the source or use `--global` for this workflow.
 
 ## Reporting something sensitive
 

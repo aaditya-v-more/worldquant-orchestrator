@@ -21,8 +21,8 @@ def check(directory: Path) -> None:
         entry = next(name for name in names if name.endswith(".dist-info/entry_points.txt"))
         if "wqo = wqo.__main__:main" not in archive.read(entry).decode():
             raise SystemExit("missing CLI entry point")
-        assert "wqo/state.py" in names and "wqo/privacy.py" in names
-    allowed_root = {".gitignore", "pyproject.toml", "PKG-INFO", "LICENSE", "README.md", "requirements.txt", "requirements-dev.txt"}
+        assert {"wqo/state.py", "wqo/privacy.py", "wqo/snapshot.py"} <= set(names)
+    allowed_root = {".gitignore", "pyproject.toml", "PKG-INFO", "LICENSE", "README.md", "CHANGELOG.md", "requirements.txt", "requirements-dev.txt"}
     allowed_docs = {"pypi.md", "installation.md", "safety.md"}
     with tarfile.open(sources[0]) as archive:
         for member in archive.getmembers():
