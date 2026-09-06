@@ -38,10 +38,10 @@
 
 <br>
 
-<img src="docs/media/demo.gif" width="760" alt="Synthetic demonstration of the research workflow, ending at the submission confirmation checkpoint">
+<a href="docs/media/demo.mp4"><img src="docs/media/demo.gif" width="760" alt="25-second synthetic preview of WQO skills in a VS Code-style agent chat: user prompt, research results and explicit approval; click for the full video"></a>
 
-<p><sub><b>Synthetic demonstration.</b> All expressions, identifiers and results shown are illustrative;<br>this is not a live account recording or evidence of investment performance.<br>
-<a href="docs/media/demo.mp4">Full-resolution video →</a> · <a href="docs/demo.md">Synthetic walkthrough →</a></sub></p>
+<p><sub><b>Synthetic agent-chat demonstration · 25-second preview.</b> All expressions, identifiers and results shown are illustrative;<br>this is not a live account recording or evidence of investment performance.<br>
+<a href="docs/media/demo.mp4">Watch the full 58-second skills demo →</a> · <a href="docs/demo.md">Synthetic walkthrough →</a></sub></p>
 
 </div>
 
