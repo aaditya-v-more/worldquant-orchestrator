@@ -27,6 +27,7 @@
 
 <p>
   <a href="#-quick-start"><b>Quick start</b></a> ·
+  <a href="https://skills.sh/aaditya-v-more/worldquant-orchestrator/wqo-cli"><b>Install skills on skills.sh</b></a> ·
   <a href="#-the-loop"><b>The loop</b></a> ·
   <a href="#-commands"><b>Commands</b></a> ·
   <a href="#-simulation-settings"><b>Settings</b></a> ·
