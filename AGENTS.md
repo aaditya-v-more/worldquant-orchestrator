@@ -135,13 +135,13 @@ never justifies submitting without the user's explicit yes.
 ## Workflow
 
 ```
-wq-auth      →  confirm session, quotas, level
-wq-data      →  find datasets and datafields
-wq-mine      →  generate + backtest candidates       (or wq-simulate for one)
-wq-analyze   →  gate report, diagnose failures
-wq-alphas    →  tag and organize survivors
-wq-submit    →  report, ask the user, then submit
-wq-account   →  rank, competitions, events, standing
+wqo-auth      →  confirm session, quotas, level
+wqo-data      →  find datasets and datafields
+wqo-mine      →  generate + backtest candidates       (or wqo-simulate for one)
+wqo-analyze   →  gate report, diagnose failures
+wqo-alphas    →  tag and organize survivors
+wqo-submit    →  report, ask the user, then submit
+wqo-account   →  rank, competitions, events, standing
 ```
 
 Distributable skill sources live in `skills/`; a core `wqo-cli` skill and eight

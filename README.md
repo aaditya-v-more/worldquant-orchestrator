@@ -315,7 +315,8 @@ Use `--skill '*'` for all nine skills. Each companion works alone and installs
 missing WQO into the project's `.wqo/venv`.
 
 Source packages live in `skills/`; installed agent folders are gitignored.
-See [portable skills and local installation](docs/skills.md).
+See [portable skills and local installation](docs/skills.md) or
+[the core skill on skills.sh](https://skills.sh/aaditya-v-more/worldquant-orchestrator/wqo-cli).
 
 ---
 

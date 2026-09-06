@@ -68,8 +68,10 @@ installing a single skill does not depend on another skill or repository files.
 ## Discovery
 
 The standard repository layout supports discovery by `npx skills add ... --list`.
-After the sources are published to GitHub, ordinary installations using the
-repository identifier can contribute to skills.sh discovery. Listing and ranking
-are managed by that service; a local-path test does not prove a public listing.
+All nine public skill pages were verified on skills.sh on 2026-09-07, and the
+GitHub-source install command was tested locally. Start with
+[the core skill](https://skills.sh/aaditya-v-more/worldquant-orchestrator/wqo-cli).
+Listing and ranking are managed by skills.sh; a local-path test alone does not
+prove a public listing.
 See the [skills CLI documentation](https://github.com/vercel-labs/skills) and
 [skills.sh listing FAQ](https://skills.sh/docs/faq).

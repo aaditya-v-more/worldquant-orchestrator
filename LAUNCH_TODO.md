@@ -22,7 +22,7 @@ Reviewed baseline (2026-09-06): already public; MIT license, contributor/securit
 - [x] Package skills and their references in a standard discoverable layout, with valid `SKILL.md` metadata and no dependencies on repo-root paths or hard-coded agent directories/symlinks.
 - [x] Support and document `npx skills add aaditya-v-more/worldquant-orchestrator` and selection of `wqo-cli` or companion skills. Use the installer's agent selection for supported agents; users must not need to manually clone the repo. See [the skills CLI documentation](https://github.com/vercel-labs/skills).
 - [x] Test a single companion installed via `npx skills` in an isolated subfolder: automatic project-local CLI installation, help/version commands and reuse all pass without auth or simulation. Nine skills validate; all 143 offline tests pass. Local installs target Codex, Claude Code, Copilot and Qoder; installed copies are gitignored.
-- [ ] Verify discovery/listing on [skills.sh](https://skills.sh/docs) after publication, following its current indexing rules; add verified skill links and installation instructions to the README.
+- [x] Publish the skill sources to GitHub and verify a repository-source `npx skills` install locally. All nine skills.sh pages return their matching skill titles (2026-09-07); README links to the [core skill](https://skills.sh/aaditya-v-more/worldquant-orchestrator/wqo-cli). CI passes on Linux/macOS; no global skill or CLI installation was performed.
 
 
 **3. Fix safety and privacy issues**

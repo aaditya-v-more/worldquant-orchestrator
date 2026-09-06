@@ -65,10 +65,10 @@ For pipx, use `pipx upgrade wqo`. To install a specific supported release, use
 `uv tool install --python 3.12 'wqo==0.1.0'`. Package removal does not remove your
 ledger or credentials. Keep state backups before changing versions.
 
-A missing CLI can be installed automatically by a future core skill using this
-flow: detect `wqo`, check its version, check `uv`, install the published package
-if absent, verify `wqo --version`, then perform auth onboarding. Skill distribution
-is a separate launch task; it is not bundled into the Python installation.
+The [portable skills](skills.md) automatically install missing WQO into the
+working project's `.wqo/venv`, using uv or Python 3.12+. They verify the CLI before
+running commands. Skills install separately through `npx skills`; they are not
+bundled into the Python installation.
 
 ## Build and publish from source
 
