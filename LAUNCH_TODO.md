@@ -36,7 +36,7 @@ Reviewed baseline (2026-09-06): already public; MIT license, contributor/securit
 
 **4. Correct documentation and onboarding**
 
-- [x] Implement `account snapshot` with dated, minimal account data, private atomic writes and overwrite protection; add four offline regressions. Verify existing shared slot queue/three-process tests. 147 offline tests, a live read-only account snapshot smoke test and package build/metadata checks pass (2026-09-07). Snapshot is included in the 0.1.1 release being prepared in section 5.
+- [x] Implement `account snapshot` with dated, minimal account data, private atomic writes and overwrite protection; add four offline regressions. Verify existing shared slot queue/three-process tests. 147 offline tests, a live read-only account snapshot smoke test and package build/metadata checks pass (2026-09-07). Snapshot is published in WQO 0.1.1; see section 5.
 - [x] Fix the missing-PDF reference in `docs/alpha-research.md`; check README references too. Add traceable author/date/source links without redistributing restricted material.
 - [x] Correct the misidentified *101 Formulaic Alphas* #4 example against [the original paper, Appendix A](https://arxiv.org/pdf/1601.00991). Remove unverified compensation figures, correct fitness arithmetic and local threshold boundaries, and qualify research hypotheses. Unverified private-platform definitions are explicitly labeled.
 - [x] Remove any “sanctioned integration” claims; retain the non-affiliation notice.
@@ -46,7 +46,7 @@ Reviewed baseline (2026-09-06): already public; MIT license, contributor/securit
 **5. Prepare the first release**
 
 - [x] Protect `main` with all five GitHub Actions checks, strict up-to-date enforcement including administrators, and blocked force pushes/deletion. Enable and verify Dependabot alerts and security updates (2026-09-07).
-- [ ] Run the full offline suite after fixes, confirm CI, publish the package update including `account snapshot`, then create a matching version tag and GitHub release with a changelog, supported environments/account limitations and known issues.
+- [x] Publish [WQO 0.1.1 on PyPI](https://pypi.org/project/wqo/0.1.1/) and the matching [v0.1.1 GitHub release](https://github.com/aaditya-v-more/worldquant-orchestrator/releases/tag/v0.1.1) with [changelog](CHANGELOG.md), supported environments/account limitations, known issues, wheel/sdist and SHA256 checksums (2026-09-07). All 147 offline tests and all five [release CI checks](https://github.com/aaditya-v-more/worldquant-orchestrator/actions/runs/34056604544) pass. Both public archive hashes match; a fresh PyPI install passes outside the repo. Project-local CLI/skills refreshed; no global installation.
 
 **6. Prepare launch material**
 
