@@ -34,7 +34,7 @@ the skill packages. Ignore your local installed skill directories and generated
 
 Invoke the skill in your agent. Its bundled `scripts/wqo.sh` resolves a compatible
 `wqo` on PATH or under the current project's `.wqo/venv`. If absent, it installs
-`wqo==0.1.0` from PyPI into that local environment using uv or Python 3.12+.
+`wqo==0.1.1` from PyPI into that local environment using uv or Python 3.12+.
 It does not perform a global tool install or edit shell configuration. When both
 prerequisites are absent, it explains the required setup rather than running an
 unreviewed installer. Supported runtime platforms are macOS and Linux.

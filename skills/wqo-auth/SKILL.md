@@ -14,8 +14,9 @@ or a source checkout.
 
 ## What this account can do
 
-Run `wqo auth status` for your account and learned concurrency. At the lowest tiers (`NONE`/`BRONZE`) the
-consequences worth knowing before planning any work:
+Run `wqo auth status` for your account and learned concurrency. The observations
+below came from a `NONE` account on 2026-07-30 and were not re-probed in the
+2026-09-07 documentation review; they are not universal tier limits:
 
 - **~1 simulation slot.** Batches run near-sequentially; 40 candidates is roughly
   an hour of wall clock. Concurrency is learned from 429s and persisted — do not
@@ -59,7 +60,7 @@ Do not offer to type the password for them.
 
 ## Biometric verification
 
-New accounts usually hit a Persona identity check. When that happens the command
+Authentication may require a Persona identity check. When that happens the command
 exits with code 2 and prints a URL. This is not an error to work around:
 
 1. Give the user the URL and ask them to complete it in a browser.

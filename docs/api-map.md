@@ -1,10 +1,12 @@
 # API reachability map
 
 Every website tab probed against the API from a `level: NONE` account,
-2026-07-30. Re-run the probe yourself with:
+2026-07-30. Counts and statuses below describe that historical account snapshot,
+not a current guarantee for every user. Documentation reviewed 2026-09-07 without
+re-probing these endpoints. After an account-level change, the probe command is:
 
 ```bash
-.venv/bin/python -m wqo account probe
+wqo account probe
 ```
 
 ## Tab → endpoint

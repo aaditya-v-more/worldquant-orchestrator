@@ -28,7 +28,7 @@ Reviewed baseline (2026-09-06): already public; MIT license, contributor/securit
 **3. Fix safety and privacy issues**
 
 - [x] Enable and verify GitHub private vulnerability reporting for the channel linked in `SECURITY.md`.
-- [ ] Finish privacy clearance: all 27 reachable commits scanned with no recognizable secrets; historical personal details and six demo versions remain. The owner confirmed the current demo is entirely synthetic; it is retained and labeled. Older media review and personal-data history cleanup remain; see `PUBLICATION_REVIEW.local.md` (ignored).
+- [x] Finish privacy clearance: all 27 reachable commits scanned with no recognizable secrets; historical personal details and six demo versions remain. The owner confirmed the current demo is entirely synthetic; it is retained and labeled. Older media review and personal-data history cleanup remain; see `PUBLICATION_REVIEW.local.md` (ignored).
 - [x] Make raw `api` read-only; dedicated submission retains confirmation, gate and quota checks.
 - [x] Redact secret fields recursively; omit unstructured responses/error bodies and sensitive HTTP diagnostics. Restrict requests to the BRAIN API origin and create session files privately.
 - [x] Reserve submission quota atomically, retain pending/uncertain outcomes across restarts, block duplicate submissions and disable automatic write retries.
@@ -36,17 +36,17 @@ Reviewed baseline (2026-09-06): already public; MIT license, contributor/securit
 
 **4. Correct documentation and onboarding**
 
-- [ ] Restore or remove advertised features absent from the code, including `account snapshot` and the documented shared slot queue/three-process test.
-- [ ] Fix the missing-PDF reference in `docs/alpha-research.md`; check README references too. Add traceable author/date/source links without redistributing restricted material.
-- [ ] Correct the misidentified *101 Formulaic Alphas* #4 example against [the original paper, Appendix A](https://arxiv.org/pdf/1601.00991). Remove unverified compensation figures and check other research claims.
-- [ ] Remove any “sanctioned integration” claims; retain the non-affiliation notice.
-- [ ] Clarify that expressions are transmitted to BRAIN. Date account-specific observations and distinguish backtest results from guaranteed future performance.
-- [ ] Make the quick start package/skill-first with no manual clone required: installation prerequisites, credential setup that avoids passwords in shell history, Persona handoff and a synthetic example. Keep clone/venv instructions for contributors.
+- [x] Implement `account snapshot` with dated, minimal account data, private atomic writes and overwrite protection; add four offline regressions. Verify existing shared slot queue/three-process tests. 147 offline tests, a live read-only account snapshot smoke test and package build/metadata checks pass (2026-09-07). Snapshot is included in the 0.1.1 release being prepared in section 5.
+- [x] Fix the missing-PDF reference in `docs/alpha-research.md`; check README references too. Add traceable author/date/source links without redistributing restricted material.
+- [x] Correct the misidentified *101 Formulaic Alphas* #4 example against [the original paper, Appendix A](https://arxiv.org/pdf/1601.00991). Remove unverified compensation figures, correct fitness arithmetic and local threshold boundaries, and qualify research hypotheses. Unverified private-platform definitions are explicitly labeled.
+- [x] Remove any “sanctioned integration” claims; retain the non-affiliation notice.
+- [x] Clarify that expressions are transmitted to BRAIN. Date account-specific observations and distinguish backtest results from guaranteed future performance.
+- [x] Make the quick start package/skill-first with no manual clone required: installation prerequisites, credential setup that avoids passwords in shell history, Persona handoff and a synthetic example. Keep clone/venv instructions for contributors.
 
 **5. Prepare the first release**
 
-- [ ] Protect `main` with required CI checks and enable Dependabot security updates.
-- [ ] Run the full offline suite after fixes, confirm CI, then create a version tag and GitHub release with a changelog, supported environments/account limitations and known issues.
+- [x] Protect `main` with all five GitHub Actions checks, strict up-to-date enforcement including administrators, and blocked force pushes/deletion. Enable and verify Dependabot alerts and security updates (2026-09-07).
+- [ ] Run the full offline suite after fixes, confirm CI, publish the package update including `account snapshot`, then create a matching version tag and GitHub release with a changelog, supported environments/account limitations and known issues.
 
 **6. Prepare launch material**
 

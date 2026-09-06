@@ -53,57 +53,64 @@ against the 0.70 limit.
 | Check | Reading |
 |---|---|
 | `LOW_SHARPE` | IS Sharpe under the required minimum |
-| `LOW_FITNESS` | fitness under minimum; usually turnover-driven |
+| `LOW_FITNESS` | fitness under minimum; inspect returns, Sharpe and turnover |
 | `LOW_TURNOVER` / `HIGH_TURNOVER` | outside the acceptable trading band |
-| `CONCENTRATED_WEIGHT` | too much book in too few names — add neutralization or truncate harder |
-| `LOW_SUB_UNIVERSE_SHARPE` | works on large caps only; doesn't generalize |
+| `CONCENTRATED_WEIGHT` | concentration check failed; inspect weights and coverage |
+| `LOW_SUB_UNIVERSE_SHARPE` | failed the platform’s sub-universe comparison |
 | `SELF_CORRELATION` | too close to an alpha you already submitted |
-| `MATCHES_COMPETITION` | too close to a production alpha |
+| `MATCHES_COMPETITION` | inspect the returned competition check and its message |
 | `UNITS` / `IS_LADDER_SHARPE` | unit mismatch or unstable across sub-periods |
 
-## Passing criteria (delay 1)
+## Local gate defaults
 
-| Metric | Requirement |
+Reviewed against WQO 0.1.0 on 2026-09-07. These are local defaults, not universal
+platform requirements; inspect BRAIN's actual returned checks and limits.
+
+| Metric | Local rule |
 |---|---|
-| Sharpe | > 1.25 |
-| Fitness | > 1.0 |
-| Turnover | 1% – 70% |
-| Drawdown | < 10% |
-| Weight concentration | < 10% |
-| Self-correlation | < 0.7, **or** Sharpe >10% better than the alpha it correlates with |
+| Sharpe | Absolute value ≥ 1.25 |
+| Fitness | Absolute value ≥ 1.0 |
+| Turnover | 1%–70%, inclusive |
+| Drawdown | Absolute value ≤ 10%, skipped if missing |
+| Self/production correlation | < 0.70 when available, skipped if missing |
+| Weight concentration | BRAIN check; no separate local 10% threshold |
 
-## Why fitness fails when Sharpe passes
+Missing Sharpe, fitness or turnover fails. The gate does not invert negative
+expressions automatically. The self-correlation diagnostic mentions a configured
+10% Sharpe-improvement exemption, but WQO cannot evaluate it and still fails that
+local criterion. Do not promise that the platform will apply an exemption.
+Skipped checks do not establish eligibility, and backtests do not guarantee
+future performance.
+
+## Interpreting fitness
+
+The earlier research notes use this working formula:
 
 ```
 Fitness = Sharpe × sqrt( |Returns| / max(Turnover, 0.125) )
 ```
 
-Fitness is Sharpe discounted by turnover. Sharpe 1.26 at turnover 0.34 needs
-returns near 0.28 to reach fitness 1.0 — cutting turnover is almost always
-easier than lifting returns.
+A public primary BRAIN definition was not independently verified in this review;
+confirm it in signed-in Learn documentation. WQO uses BRAIN's reported fitness.
+Under this formula, Sharpe 1.26 and turnover 0.34 need absolute returns
+`0.34 / 1.26² ≈ 0.2142` for fitness 1.0, with decimal units. Lowering turnover
+alone below 0.125 does not reduce the denominator; parameter changes can also
+change returns and Sharpe.
 
-## Fixing common failures
+## Investigating failures
 
-- **Low fitness** → raise `--decay` or wrap in `ts_decay_linear(..., n)`. Turnover
-  is the lever.
-- **Concentrated weight** → first check for NaN gaps: a field that is empty for
-  most names concentrates the whole book into the few that have data. Wrap
-  fundamentals in `ts_backfill(field, 60)`. Then `group_neutralize(..., subindustry)`
-  or lower `--truncation`.
-- **High turnover** → raise `--decay`; gate execution with
-  `trade_when(volume > adv20, signal, -1)`.
-- **Infrequent trading** → lower `--decay`; confirm the field updates as often as
-  you assumed.
-- **Low sub-universe Sharpe** → re-simulate on TOP1000 to see whether the signal
-  is genuinely large-cap-only.
-- **Self correlation** → change the *datafield*, not the wrapper. Changing
-  neutralization or region also works; changing the operator around the same
-  field usually does not.
-- **Low Sharpe** → smooth the signal (moving average or decay).
+- **Low fitness or high turnover:** inspect returns, signal update frequency,
+  smoothing and decay. No parameter change guarantees improvement.
+- **Concentrated weight:** inspect coverage, stale values and outliers before
+  testing backfill, neutralization or truncation changes.
+- **Low sub-universe Sharpe:** compare the relevant universes and returned check
+  definition; this does not by itself prove a large-cap-only signal.
+- **Self-correlation:** investigate whether the hypothesis adds distinct
+  information. Changing a field, wrapper or region is not a guaranteed fix.
+- **Low Sharpe:** examine the rationale, sign and stability across periods.
 
-Re-simulate after each change with `wqo-simulate` and re-run the gate.
-
-Deeper reference, including proven expression patterns: the gate report and expression notes.
+Re-simulate approved research changes within the existing budget, record failed
+candidates and re-run the gate. Repeated tuning on held-out data creates leakage.
 
 Companion skill names above are optional guidance. If none are installed, use
 the equivalent `wqo` command through this skill's bundled runner.

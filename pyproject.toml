@@ -46,7 +46,7 @@ only-include = ["wqo"]
 
 [tool.hatch.build.targets.sdist]
 only-include = [
-  "wqo", "tests/test_offline.py", "tests/test_safety.py", "tests/test_packaging.py", "pyproject.toml", "LICENSE", "README.md",
+  "wqo", "tests/test_offline.py", "tests/test_safety.py", "tests/test_packaging.py", "pyproject.toml", "LICENSE", "README.md", "CHANGELOG.md",
   "requirements.txt", "requirements-dev.txt", "docs/pypi.md",
   "docs/installation.md", "docs/safety.md", "scripts/check_dist.py", "scripts/smoke_installed.py",
 ]

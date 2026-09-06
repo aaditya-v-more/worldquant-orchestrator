@@ -23,15 +23,15 @@ Valid values: `subindustry`, `industry`, `sector`, `market`.
 
 ## Operator availability depends on account level
 
-This account (`level: NONE`) has 66 operators. That is not the full set — some
-documented operators simply are not there, and using one fails the simulation
-and burns a slot. Check first:
+A `NONE` account returned 66 operators on 2026-07-30. This historical list was
+not re-probed during the 2026-09-07 documentation review. Availability varies;
+an unsupported operator can fail a simulation and use quota. Check first:
 
 ```bash
-.venv/bin/python -m wqo data operators
+wqo data operators
 ```
 
-Available at this level, grouped roughly:
+Available in that observation, grouped roughly:
 
 ```
 arithmetic   add subtract multiply divide inverse power signed_power sqrt log abs sign reverse min max
@@ -51,16 +51,16 @@ wastes a slot on this. Hand-written expressions get no such protection.
 
 ## Data fields
 
-**Backfill sparse fundamentals.** Fundamentals report quarterly; between report
-dates the field is NaN. A field that is NaN for most names on most days
-concentrates the entire book into the few names that have data, which shows up
-as a `CONCENTRATED_WEIGHT` failure that looks unrelated to the data.
+**Inspect sparse fundamentals.** Coverage and update frequency depend on the
+field. Missing values can contribute to concentrated weights; inspect coverage
+before choosing a backfill window or interpreting a concentration failure.
 
 ```
 ts_backfill(fundamental_field, 60)
 ```
 
-60 trading days is the norm for quarterly data.
+60 trading days is an example lookback. Check data age and update frequency;
+carrying stale values forward can also distort a signal.
 
 **`adv20` exists** in the `pv1` dataset — 20-day average daily volume. Use it
 directly for liquidity gating instead of recomputing it:

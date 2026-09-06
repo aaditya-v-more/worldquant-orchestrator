@@ -24,8 +24,8 @@ uv venv --python 3.12 .venv
 uv pip install --python .venv/bin/python -r requirements-dev.txt
 ```
 
-System Python is 3.9 and will not run this code — it uses `X | None` annotations
-and modern generics.
+Use Python 3.12+ as declared in `pyproject.toml`; do not assume the system
+interpreter meets that requirement.
 
 Every command prints JSON to stdout. `gate` and `submit` also render a table
 unless `--json` is passed.
@@ -70,12 +70,16 @@ records alone means it returns on the next run.
 
 ## Account facts
 
-Read your own account id, level and learned concurrency from
-`ACCOUNT.local.md` — run `wqo account snapshot` to write it. It is gitignored,
-because every value in it is per-user.
+Run `.venv/bin/python -m wqo auth status` for your account, quotas and learned
+concurrency, and `.venv/bin/python -m wqo account status` for competition progress.
+Run `.venv/bin/python -m wqo account snapshot` to write a dated, private
+`ACCOUNT.local.md` with account ID, level, competition progress and local quota
+usage. Existing notes are preserved unless you explicitly use `--overwrite`.
+This command requires WQO 0.1.1+; check `account --help` with older installations.
 
-The table below is what a **low-tier account** (`NONE`/`BRONZE`) can expect.
-Higher tiers lift these limits; do not treat the numbers as universal:
+The table below records observations from a `NONE` account on 2026-07-30.
+It was not re-probed during the 2026-09-07 documentation review. Availability can
+vary by account and time; do not treat these numbers as universal:
 
 | Constraint | Consequence |
 |---|---|
@@ -94,12 +98,13 @@ Gotchas that cost real simulations to discover — see `docs/fastexpr.md`:
 
 - **No scientific notation.** `1e-9` fails with `Unexpected character 'e'`. Write
   `0.000000001`.
-- **Backfill sparse fundamentals.** `ts_backfill(field, 60)` or the field is NaN
-  most days, which silently concentrates the whole book into a few names.
+- **Inspect sparse fundamentals.** Missing values can concentrate weights.
+  `ts_backfill(field, 60)` is one hypothesis to test after checking data age.
 - **`adv20` is a real field** in the `pv1` dataset. Use it for liquidity gating
   rather than recomputing `ts_mean(volume, 20)`.
 - **Group names** are `subindustry`, `industry`, `sector`, `market`.
-- Sign is irrelevant — Sharpe −1.8 is a good alpha with a minus sign missing.
+- A strongly negative Sharpe can motivate testing the inverted expression.
+  Re-simulate and inspect its checks; the local gate does not invert it for you.
 
 ---
 
@@ -184,7 +189,7 @@ Anything not wrapped by a command is still reachable:
 
 | File | Contents |
 |---|---|
-| `docs/alpha-research.md` | Passing criteria, fitness formula, proven patterns, symptom → fix |
+| `docs/alpha-research.md` | Local gate rules, sourced examples and research limitations |
 | `docs/api-map.md` | Every tab mapped to its endpoint; what 404s and 403s |
 | `docs/fastexpr.md` | Expression syntax constraints and operator availability |
 | `wqo/config.py` | All tunables and gate thresholds |

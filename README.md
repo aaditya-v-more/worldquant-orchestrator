@@ -109,17 +109,33 @@ flowchart LR
 
 ## ⚡ Quick start
 
+Use macOS or Linux. Choose either route; neither requires a manual clone.
+
+**CLI:** [install uv](https://docs.astral.sh/uv/getting-started/installation/),
+then install [WQO from PyPI](https://pypi.org/project/wqo/). uv can provision Python 3.12.
+
 ```bash
 uv tool install --python 3.12 wqo
 wqo --version
+wqo state
 ```
 
-Python 3.12+; macOS and Linux. See [installation, upgrades and existing-ledger
-migration](docs/installation.md). No manual clone is required.
-[WQO is available on PyPI](https://pypi.org/project/wqo/).
+**Agent skill:** with [Node.js/npm](https://nodejs.org/en/download) and uv (or
+Python 3.12+) available, run from your working project:
 
-Create your credentials file in a text editor — nothing in this repo will write it.
-Use this JSON format and keep the password out of shell history:
+```bash
+npx skills add aaditya-v-more/worldquant-orchestrator --skill wqo-cli
+```
+
+Select your agent and keep the install project-local (omit `--global`). Invoke
+`wqo-cli` in your agent; its runner installs missing WQO into `.wqo/venv`.
+Ask it to show the version and state paths first. See [skill setup](docs/skills.md)
+for the runner path; a skill-local install does not put `wqo` on your shell PATH.
+The commands below use the CLI route; agents run them through the skill runner.
+
+You need your own [BRAIN account](https://platform.worldquantbrain.com) for live
+operations. Create `~/.brain_credentials.json` yourself in a text editor.
+Use this JSON format and keep the password out of shell history and chat:
 
 ```json
 {"email": "you@example.com", "password": "..."}
@@ -136,61 +152,80 @@ wqo auth status
 ```
 
 > [!IMPORTANT]
-> **First login on a new account.** BRAIN usually requires a Persona biometric
-> check the first time an account authenticates through the API. The command
-> exits with code `2` and prints a URL. Open it in a browser, complete the check,
-> then run `wqo auth persona`.
-> This is a human step by design — nothing here bypasses it.
+> **Persona verification.** If authentication exits with code `2` and provides
+> an inquiry URL, open it in your browser and complete the check yourself, then
+> run `wqo auth persona`. Other authentication errors also use exit `2`; follow
+> the actual error message. An agent must wait for you to confirm completion.
+
+A synthetic example expression (no claimed performance) is `rank(close)`.
+To backtest it after authentication:
+
+```bash
+wqo sim run --code "rank(close)" --neutralization NONE --test-period 1y
+```
+
+This sends the expression and settings to BRAIN and uses simulation quota. It
+creates a backtest, not a submission; results do not guarantee future returns.
+For a check without BRAIN access or research quota, use `wqo sim run --help`.
+See [installation and onboarding](docs/installation.md) for credential setup,
+PATH troubleshooting, upgrades and existing-ledger migration. Contributors use
+[the clone/venv setup](CONTRIBUTING.md#getting-set-up).
 
 ---
 
 ## 🛠 Commands
 
 Everything prints JSON to stdout. `gate` and `submit` also render a table unless
-`--json` is passed.
+`--json` is passed. The reference below uses `|` for alternatives, `[]` for
+optional arguments and `<alpha_id>` for your identifier; these are notation,
+not shell pipelines. Use `wqo <command> --help` for copyable argument syntax.
 
-```bash
+```text
 # ── account ─────────────────────────────────────────────────────────
-python -m wqo auth login | status | persona | logout
+wqo auth login | status | persona | logout
 
 # ── data discovery (locally cached for 7 days) ──────────────────────
-python -m wqo data datasets --region USA --delay 1 --universe TOP3000
-python -m wqo data fields --dataset fundamental6 --search revenue
-python -m wqo data operators
+wqo data datasets --region USA --delay 1 --universe TOP3000
+wqo data fields --dataset fundamental6 --search revenue
+wqo data operators
 
 # ── backtesting ─────────────────────────────────────────────────────
-python -m wqo sim run --code "-ts_delta(ts_backfill(close, 60), 5)"
-python -m wqo sim run --code "rank(close)" --neutralization NONE --test-period 1y
-python -m wqo sim batch --file ideas.json
-python -m wqo sim recent
+wqo sim run --code "-ts_delta(ts_backfill(close, 60), 5)"
+wqo sim run --code "rank(close)" --neutralization NONE --test-period 1y
+wqo sim batch --file ideas.json
+wqo sim recent
 
 # ── analysis ────────────────────────────────────────────────────────
-python -m wqo alpha get|pnl|yearly <alpha_id>
-python -m wqo alpha corr <alpha_id> [--prod]
-python -m wqo alpha list --status UNSUBMITTED --min-sharpe 1.25
-python -m wqo alpha list --grade EXCELLENT
-python -m wqo alpha tag <alpha_id> --name "..." --color GREEN --tags a,b
+wqo alpha get|pnl|yearly <alpha_id>
+wqo alpha corr <alpha_id> [--prod]
+wqo alpha list --status UNSUBMITTED --min-sharpe 1.25
+wqo alpha list --grade EXCELLENT
+wqo alpha tag <alpha_id> --name "..." --color GREEN --tags a,b
 
 # ── submission ──────────────────────────────────────────────────────
-python -m wqo gate <alpha_id>              # read-only report
-python -m wqo submit <alpha_id>            # report only, refuses to submit
-python -m wqo submit <alpha_id> --confirm  # actually submits
+wqo gate <alpha_id>              # read-only report
+wqo submit <alpha_id>            # report only, refuses to submit
+wqo submit <alpha_id> --confirm  # actually submits
 
 # ── mining ──────────────────────────────────────────────────────────
-python -m wqo mine --dataset fundamental6 --budget 40 [--dry-run]
+wqo mine --dataset fundamental6 --budget 40 [--dry-run]
 
 # ── competitions, standing, team, learn, notifications ──────────────
-python -m wqo account status                    # rank, score, level progress
-python -m wqo account competitions [--mine]
-python -m wqo account competition IQC2026S1 [--alphas|--agreement]
-python -m wqo account activity                  # counters + referrals
-python -m wqo account teams|events|tutorials|messages|agreements
-python -m wqo account probe                     # what this level can reach
+wqo account status                    # rank, score, level progress
+wqo account competitions [--mine]
+wqo account competition IQC2026S1 [--alphas|--agreement]
+wqo account activity                  # counters + referrals
+wqo account teams|events|tutorials|messages|agreements
+wqo account probe                     # what this level can reach
 
 # ── anything not wrapped above ──────────────────────────────────────
-python -m wqo api GET /users/self/activities
-python -m wqo discover
+wqo api GET /users/self/activities
+wqo discover
 ```
+
+WQO 0.1.1+ also provides `wqo account snapshot` to write dated, private
+`ACCOUNT.local.md` notes in the current directory. Existing notes are preserved;
+use `--overwrite` to refresh. See [the changelog](CHANGELOG.md).
 
 <table>
 <tr>
@@ -282,8 +317,7 @@ logged, echoed, or written by this tool.
 
 ## 📡 Rate limiting
 
-This uses the official API, which is the sanctioned integration path — but it
-behaves like a good client rather than hammering the endpoint:
+WQO paces requests to BRAIN's API using these controls:
 
 - **`Retry-After` governs read retries and polling**, including simulation progress,
   checks and correlations. A throttled write stops without an automatic replay.
@@ -330,12 +364,12 @@ Code, Copilot, Cursor, Qoder and OpenCode all read one source of truth.
 | Document | Contents |
 |---|---|
 | [`docs/fastexpr.md`](docs/fastexpr.md) | FASTEXPR syntax constraints, the operator set actually available at this account level, and the `pv1` field list |
-| [`docs/alpha-research.md`](docs/alpha-research.md) | Passing criteria, the fitness formula, proven expression patterns, and a symptom → fix table |
+| [`docs/alpha-research.md`](docs/alpha-research.md) | Local gate rules, fitness arithmetic, sourced examples and research limitations |
 | [`docs/api-map.md`](docs/api-map.md) | Every website tab mapped to its endpoint, plus what is *not* available |
 
-`docs/alpha-research.md` is distilled from *Quantitative Alpha Research:
-WorldQuant BRAIN*. The gate thresholds and mining templates are derived from it;
-where it conflicts with BRAIN's own `/check`, BRAIN wins.
+The [research reference](docs/alpha-research.md) distinguishes local defaults
+from platform checks, links the original publications and labels unverified
+assumptions. No source PDF is bundled with this repository.
 
 > [!CAUTION]
 > There is **no leaderboard endpoint**. `GET /alphas` is `405` and

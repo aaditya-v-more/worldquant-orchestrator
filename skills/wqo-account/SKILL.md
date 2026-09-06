@@ -21,7 +21,13 @@ wqo account status
 Returns rank, score, alphas counted, current level, and points remaining to the
 next level, per competition you have joined.
 
-Level thresholds: Bronze 1,000 · Silver 5,000 · Gold 10,000 points.
+Use the returned progress and the competition's current rules; fixed level
+thresholds and consultant-invitation eligibility are not verified here.
+
+If `wqo account --help` lists `snapshot`, `wqo account snapshot` writes a dated,
+private `ACCOUNT.local.md` in the working project. It preserves existing notes;
+use `--overwrite` only when replacing them is intended. This requires WQO 0.1.1+;
+with 0.1.0, use the status commands or upgrade the CLI.
 
 ## Competitions
 
@@ -32,8 +38,8 @@ wqo account competition IQC2026S1
 wqo account competition challenge --alphas
 ```
 
-`status: EXCLUDED` means the account is not eligible — usually sign-up closed or
-a region/university restriction, not an error.
+`status: EXCLUDED` reports exclusion. Check the competition's rules or returned
+details rather than inferring a specific cause from the status alone.
 
 ## Everything else
 
@@ -64,9 +70,10 @@ Full probe results and the tab-to-endpoint map: `wqo account --help`.
 
 ## When an endpoint 403s
 
-`/users/self/consultant` and `/alphas/{id}/correlations/prod` are gated by
-account level. Report that plainly rather than treating it as a bug. Re-run
-`account probe` after a level change to see what has opened up.
+A `NONE` account received 403 for `/users/self/consultant` and
+`/alphas/{id}/correlations/prod` on 2026-07-30. Treat a current 403 as unavailable
+for that request; do not assume the exact cause. Re-run `account probe` after a
+level change to see what has opened up.
 
 Companion skill names above are optional guidance. If none are installed, use
 the equivalent `wqo` command through this skill's bundled runner.

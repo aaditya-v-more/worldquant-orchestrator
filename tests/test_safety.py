@@ -333,3 +333,81 @@ def test_accepted_but_unresolved_response_is_not_reported_as_success(tmp_path):
         with pytest.raises(ApiError, match="not resolved"):
             submit(fake, "DEMO_ALPHA", confirmed=True, preparation=prep(), ledger=ledger)
         assert ledger.conn.execute("SELECT outcome FROM submissions").fetchone()[0] == "UNKNOWN"
+
+
+def test_account_snapshot_is_private_minimal_and_does_not_print_profile(tmp_path, monkeypatch, capsys):
+    from wqo import snapshot
+
+    monkeypatch.chdir(tmp_path)
+    fake = Mock()
+    fake.whoami.return_value = {"id": "SYNTHETIC_ACCOUNT", "level": "NONE", "email": "private@example.invalid", "password": "DO_NOT_COPY"}
+    fake.json.return_value = {"results": [{
+        "id": "DEMO_COMPETITION", "status": "ACTIVE",
+        "leaderboard": {"rank": 12, "score": 34, "university": "PRIVATE_UNIVERSITY"},
+        "progress": {"level": "BRONZE", "score": {"remaining": 56}},
+    }]}
+    monkeypatch.setattr(cli, "_session", lambda args: fake)
+    monkeypatch.setattr(cli, "_ledger", lambda: Ledger(tmp_path / "ledger.sqlite"))
+    assert cli.main(["account", "snapshot"]) == 0
+    path = tmp_path / "ACCOUNT.local.md"
+    output = json.loads(capsys.readouterr().out)
+    assert output == {"path": str(path), "written": True}
+    content = path.read_text()
+    assert "SYNTHETIC_ACCOUNT" in content
+    assert '"rank": 12' in content and '"concurrency": 1' in content
+    assert "private@example" not in content and "DO_NOT_COPY" not in content
+    assert "PRIVATE_UNIVERSITY" not in content
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert not list(tmp_path.glob(".wqo-account-*"))
+    assert all(call.args[0] == "GET" for call in fake.json.call_args_list)
+
+
+def test_account_snapshot_preserves_notes_and_refuses_symlink(tmp_path, monkeypatch, capsys):
+    from wqo import snapshot
+
+    monkeypatch.chdir(tmp_path)
+    target = tmp_path / "ACCOUNT.local.md"
+    target.write_text("manually maintained notes")
+    monkeypatch.setattr(cli, "_session", Mock(side_effect=AssertionError("must not authenticate")))
+    assert cli.main(["account", "snapshot"]) == 1
+    assert target.read_text() == "manually maintained notes"
+    with pytest.raises(FileExistsError):
+        snapshot.write({}, tmp_path)
+    assert target.read_text() == "manually maintained notes"
+    target.unlink()
+    other = tmp_path / "do-not-change"
+    other.write_text("keep")
+    target.symlink_to(other)
+    assert cli.main(["account", "snapshot", "--overwrite"]) == 1
+    assert other.read_text() == "keep"
+    assert not list(tmp_path.glob(".wqo-account-*"))
+
+
+def test_account_snapshot_refresh_is_atomic_and_private(tmp_path, monkeypatch):
+    from wqo import snapshot
+
+    path = snapshot.write({"account": {"id": "OLD"}}, tmp_path)
+    path.chmod(0o644)
+    original = snapshot.os.replace
+    monkeypatch.setattr(snapshot.os, "replace", Mock(side_effect=OSError("synthetic failure")))
+    with pytest.raises(OSError):
+        snapshot.write({"account": {"id": "NEW"}}, tmp_path, overwrite=True)
+    assert '"OLD"' in path.read_text()
+    assert not list(tmp_path.glob(".wqo-account-*"))
+    monkeypatch.setattr(snapshot.os, "replace", original)
+    snapshot.write({"account": {"id": "NEW"}}, tmp_path, overwrite=True)
+    assert '"NEW"' in path.read_text() and '"OLD"' not in path.read_text()
+    assert path.stat().st_mode & 0o777 == 0o600
+
+
+def test_account_snapshot_api_failure_preserves_existing_file(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    path = tmp_path / "ACCOUNT.local.md"
+    path.write_text("keep previous snapshot")
+    fake = Mock()
+    fake.whoami.side_effect = ApiError("synthetic unavailable")
+    monkeypatch.setattr(cli, "_session", lambda args: fake)
+    monkeypatch.setattr(cli, "_ledger", lambda: Ledger(tmp_path / "ledger.sqlite"))
+    assert cli.main(["account", "snapshot", "--overwrite"]) == 1
+    assert path.read_text() == "keep previous snapshot"
+    assert not capsys.readouterr().out
