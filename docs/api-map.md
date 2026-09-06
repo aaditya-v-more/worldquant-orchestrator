@@ -68,7 +68,7 @@ platform's product; exposing other users' expressions would defeat the model.
 inside each of *your* competition records:
 
 ```json
-{ "rank": 246107, "user": "<your account id>", "score": 0.0, "alphas": 0,
+{ "rank": "<your rank>", "user": "<your account id>", "score": 0.0, "alphas": 0,
   "level": null, "university": "<your university>", "country": "<your country>" }
 ```
 

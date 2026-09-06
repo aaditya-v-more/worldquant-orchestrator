@@ -14,7 +14,7 @@ it uses `X | None` annotations and modern generics.
 git clone https://github.com/aaditya-v-more/worldquant-orchestrator
 cd worldquant-orchestrator
 uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python -r requirements.txt
+uv pip install --python .venv/bin/python -r requirements-dev.txt
 ```
 
 Run the tests. They are offline — no network, no credentials, no account
@@ -63,8 +63,9 @@ please add a regression test when you touch:
 - **slot and concurrency behaviour** — the shared ledger, the slot queue, the
   learned-concurrency backoff. The three-process contention test is the only
   one that catches the startup race.
-- **budget accounting** — day boundaries are US Eastern, not UTC, and the skew
-  is four to five hours of silently wrong quota
+- **budget accounting** — local days use US Eastern with DST. Submissions also
+  enforce a rolling 24-hour cap until the platform reset convention is verified;
+  pending/unknown writes retain quota across day boundaries
 - **mining templates and scoring** — a template that emits an expression BRAIN's
   parser rejects burns a slot to discover
 

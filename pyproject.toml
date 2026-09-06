@@ -1,0 +1,55 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "wqo"
+dynamic = ["version"]
+description = "WorldQuant BRAIN research client and command-line interface"
+readme = "docs/pypi.md"
+requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Aaditya Vitthal More" }]
+keywords = ["worldquant", "brain", "quant", "alpha", "cli"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Office/Business :: Financial :: Investment",
+]
+dependencies = ["requests>=2.31,<3"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "build>=1.2", "twine>=6"]
+
+[project.scripts]
+wqo = "wqo.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/aaditya-v-more/worldquant-orchestrator"
+Documentation = "https://github.com/aaditya-v-more/worldquant-orchestrator#readme"
+Issues = "https://github.com/aaditya-v-more/worldquant-orchestrator/issues"
+Source = "https://github.com/aaditya-v-more/worldquant-orchestrator"
+
+[tool.hatch.version]
+path = "wqo/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["wqo"]
+only-include = ["wqo"]
+
+[tool.hatch.build.targets.sdist]
+only-include = [
+  "wqo", "tests/test_offline.py", "tests/test_safety.py", "tests/test_packaging.py", "pyproject.toml", "LICENSE", "README.md",
+  "requirements.txt", "requirements-dev.txt", "docs/pypi.md",
+  "docs/installation.md", "docs/safety.md", "scripts/check_dist.py", "scripts/smoke_installed.py",
+]
+
+[tool.hatch.build]
+exclude = ["**/__pycache__", "**/*.pyc", "**/*.local.md", "**/*credentials*.json", "**/*session*.json"]

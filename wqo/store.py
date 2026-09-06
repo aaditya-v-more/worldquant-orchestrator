@@ -10,10 +10,12 @@ Two jobs:
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
@@ -50,11 +52,16 @@ CREATE TABLE IF NOT EXISTS submissions (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     created_at  REAL NOT NULL,
     alpha_id    TEXT NOT NULL,
-    outcome     TEXT NOT NULL,               -- SUBMITTED | FAILED
+    outcome     TEXT NOT NULL,               -- PENDING | UNKNOWN | SUBMITTED | FAILED
     detail_json TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_sub_created ON submissions (created_at);
+
+CREATE TABLE IF NOT EXISTS simulation_slots (
+    owner TEXT PRIMARY KEY,
+    pid INTEGER NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS kv (
     key        TEXT PRIMARY KEY,
@@ -64,15 +71,22 @@ CREATE TABLE IF NOT EXISTS kv (
 """
 
 
-def _utc_day_start(ts: Optional[float] = None) -> float:
-    """Epoch seconds at the most recent UTC midnight.
+def _day_start(ts: Optional[float] = None) -> float:
+    """US Eastern midnight, including daylight-saving transitions."""
+    now = datetime.fromtimestamp(ts if ts is not None else time.time(),
+                                 tz=ZoneInfo("America/New_York"))
+    return now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
 
-    BRAIN's daily quotas roll over on its own clock, not the local one; UTC is
-    the closest stable proxy and keeps budget accounting deterministic.
-    """
-    now = datetime.fromtimestamp(ts if ts is not None else time.time(), tz=timezone.utc)
-    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    return midnight.timestamp()
+
+def _submission_window_start() -> float:
+    # Until the platform's reset convention is verified, also enforce a rolling
+    # 24-hour cap. This cannot grant fresh quota early at UTC/Eastern midnight.
+    now = time.time()
+    return min(_day_start(now), now - 24 * 3600)
+
+
+class SubmissionConflict(RuntimeError):
+    pass
 
 
 class Ledger:
@@ -112,13 +126,19 @@ class Ledger:
         label: Optional[str] = None,
     ) -> int:
         with self._lock:
-            cur = self.conn.execute(
-                "INSERT INTO simulations (created_at, code, settings_json, status, source, label)"
-                " VALUES (?, ?, ?, 'PENDING', ?, ?)",
-                (time.time(), code, json.dumps(settings, sort_keys=True), source, label),
-            )
-            self.conn.commit()
-            return int(cur.lastrowid)
+            self.conn.execute("BEGIN IMMEDIATE")
+            try:
+                check_simulation_budget(self)
+                cur = self.conn.execute(
+                    "INSERT INTO simulations (created_at, code, settings_json, status, source, label)"
+                    " VALUES (?, ?, ?, 'PENDING', ?, ?)",
+                    (time.time(), code, json.dumps(settings, sort_keys=True), source, label),
+                )
+                self.conn.commit()
+                return int(cur.lastrowid)
+            except BaseException:
+                self.conn.rollback()
+                raise
 
     def attach_sim_url(self, row_id: int, sim_url: str) -> None:
         with self._lock:
@@ -164,7 +184,7 @@ class Ledger:
     def simulations_today(self) -> int:
         with self._lock:
             cur = self.conn.execute(
-                "SELECT COUNT(*) FROM simulations WHERE created_at >= ?", (_utc_day_start(),)
+                "SELECT COUNT(*) FROM simulations WHERE created_at >= ?", (_day_start(),)
             )
             return int(cur.fetchone()[0])
 
@@ -201,12 +221,93 @@ class Ledger:
             self.conn.commit()
 
     def submissions_today(self) -> int:
+        """Conservatively count recent successes and all unresolved writes."""
         with self._lock:
-            cur = self.conn.execute(
-                "SELECT COUNT(*) FROM submissions WHERE created_at >= ? AND outcome = 'SUBMITTED'",
-                (_utc_day_start(),),
+            return int(self.conn.execute(
+                "SELECT COUNT(*) FROM submissions WHERE outcome IN ('PENDING', 'UNKNOWN')"
+                " OR (created_at >= ? AND outcome = 'SUBMITTED')",
+                (_submission_window_start(),),
+            ).fetchone()[0])
+
+    def reserve_submission(self, alpha_id: str) -> int:
+        """Check and reserve under one SQLite write lock across all processes."""
+        with self._lock:
+            self.conn.execute("BEGIN IMMEDIATE")
+            try:
+                prior = self.conn.execute(
+                    "SELECT 1 FROM submissions WHERE alpha_id = ? AND outcome IN"
+                    " ('PENDING', 'UNKNOWN', 'SUBMITTED') LIMIT 1", (alpha_id,)
+                ).fetchone()
+                if prior:
+                    raise SubmissionConflict(
+                        "alpha already submitted or has an unresolved submission; "
+                        "verify its status on BRAIN before any further action"
+                    )
+                check_submission_budget(self)
+                row = self.conn.execute(
+                    "INSERT INTO submissions (created_at, alpha_id, outcome) VALUES (?, ?, 'PENDING')",
+                    (time.time(), alpha_id),
+                )
+                self.conn.commit()
+                return int(row.lastrowid)
+            except BaseException:
+                self.conn.rollback()
+                raise
+
+    def finish_submission(self, row_id: int, outcome: str, detail: Any = None) -> None:
+        if outcome not in {"FAILED", "UNKNOWN", "SUBMITTED"}:
+            raise ValueError("invalid submission outcome")
+        with self._lock:
+            self.conn.execute(
+                "UPDATE submissions SET outcome = ?, detail_json = ? WHERE id = ?",
+                (outcome, json.dumps(detail), row_id),
             )
-            return int(cur.fetchone()[0])
+            self.conn.commit()
+
+    def try_acquire_slot(self, owner: str, limit: int) -> bool:
+        if os.name != "posix":
+            raise RuntimeError("shared simulation slots currently require macOS or Linux")
+        with self._lock:
+            self.conn.execute("BEGIN IMMEDIATE")
+            try:
+                for row in self.conn.execute("SELECT owner, pid FROM simulation_slots").fetchall():
+                    try:
+                        os.kill(row["pid"], 0)
+                    except ProcessLookupError:
+                        self.conn.execute("DELETE FROM simulation_slots WHERE owner = ?", (row["owner"],))
+                    except PermissionError:
+                        pass  # Treat an uninspectable process as still active.
+                learned = self.get("learned_concurrency", limit)
+                cap = max(1, min(limit, int(learned), config.MAX_CONCURRENCY))
+                count = self.conn.execute("SELECT COUNT(*) FROM simulation_slots").fetchone()[0]
+                acquired = count < cap
+                if acquired:
+                    self.conn.execute("INSERT INTO simulation_slots VALUES (?, ?)", (owner, os.getpid()))
+                self.conn.commit()
+                return acquired
+            except BaseException:
+                self.conn.rollback()
+                raise
+
+    def release_slot(self, owner: str) -> None:
+        with self._lock:
+            self.conn.execute("DELETE FROM simulation_slots WHERE owner = ?", (owner,))
+            self.conn.commit()
+
+    def update_concurrency(self, previous: int, proposed: int) -> int:
+        # A stale worker must never overwrite another process's throttle.
+        with self._lock:
+            self.conn.execute("BEGIN IMMEDIATE")
+            try:
+                current = int(self.get("learned_concurrency", previous))
+                value = min(current, proposed) if proposed < previous else (
+                    proposed if current == previous else current
+                )
+                self.set("learned_concurrency", value)
+                return value
+            except BaseException:
+                self.conn.rollback()
+                raise
 
     # -- key/value ---------------------------------------------------------
 
@@ -237,7 +338,7 @@ def check_simulation_budget(ledger: Ledger, wanted: int = 1) -> None:
     if used + wanted > cap:
         raise BudgetExceeded(
             f"daily simulation budget exhausted: {used}/{cap} used today "
-            f"(raise with WQO_SIM_BUDGET)"
+            "(stop until quota is available)"
         )
 
 
@@ -247,5 +348,5 @@ def check_submission_budget(ledger: Ledger) -> None:
     if used + 1 > cap:
         raise BudgetExceeded(
             f"daily submission budget exhausted: {used}/{cap} used today "
-            f"(raise with WQO_SUBMIT_BUDGET)"
+            "(includes unresolved submissions and the rolling 24-hour safety window)"
         )

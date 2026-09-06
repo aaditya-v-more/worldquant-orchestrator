@@ -25,10 +25,13 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements-dev.txt
 
       # The suite is offline by design: no network, no credentials, no BRAIN
       # account. If a test ever needs one of those, it belongs somewhere else.
+      - name: Verify portable skill resources
+        run: python scripts/sync_skills.py --check
+
       - name: Run tests
         run: python -m pytest tests -q
 
@@ -61,3 +64,30 @@ jobs:
           if [ -n "$hits" ]; then
             echo "::error::Possible credential committed:"; echo "$hits"; exit 1
           fi
+
+  package:
+    name: package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build and inspect distributions
+        run: |
+          python -m pip install build twine
+          python -m build
+          python -m twine check --strict dist/*
+          python scripts/check_dist.py dist
+      - name: Install each archive outside the checkout
+        shell: bash
+        run: |
+          for archive in "$GITHUB_WORKSPACE"/dist/*.whl "$GITHUB_WORKSPACE"/dist/*.tar.gz; do
+            install_dir=$(mktemp -d)
+            python -m venv "$install_dir/venv"
+            "$install_dir/venv/bin/python" -m pip install "$archive"
+            (cd "$install_dir" && "$install_dir/venv/bin/python" -I "$GITHUB_WORKSPACE/scripts/smoke_installed.py" "$GITHUB_WORKSPACE")
+          done

@@ -6,8 +6,8 @@ Design notes:
   matters: re-authenticating on every invocation is both slow and the most
   abnormal-looking traffic pattern a client can produce.
 * HTTP Basic credentials are sent to ``POST /authentication`` and nowhere else.
-* A 401 on any call triggers exactly one silent re-auth, then the original
-  request is replayed. No retry storms.
+* Read requests may re-authenticate once after a 401. Writes are never replayed
+  automatically, including on timeouts, throttling, redirects or server errors.
 * Biometric (Persona) verification is never bypassed. When BRAIN asks for it,
   the flow stops and hands the URL to the human.
 """
@@ -16,7 +16,8 @@ from __future__ import annotations
 
 import json
 import os
-import stat
+import tempfile
+from urllib.parse import urlsplit
 from pathlib import Path
 from typing import Any, Optional
 
@@ -24,6 +25,7 @@ import requests
 
 from . import config, endpoints
 from .pacing import RateGovernor, is_retryable
+from .privacy import redact, diagnostic_url, response_detail
 
 
 class AuthError(RuntimeError):
@@ -44,7 +46,7 @@ class BiometricRequired(AuthError):
 
 class ApiError(RuntimeError):
     def __init__(self, message: str, response: Optional[requests.Response] = None):
-        super().__init__(message)
+        super().__init__(redact(message))
         self.response = response
         self.status_code = response.status_code if response is not None else None
 
@@ -74,8 +76,14 @@ def load_credentials(path: Optional[Path] = None) -> tuple[str, str]:
 
 def _write_private(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload))
-    os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)  # 0600
+    fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=".wqo-")
+    try:
+        with os.fdopen(fd, "w") as stream:
+            json.dump(payload, stream)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 class BrainSession(requests.Session):
@@ -136,6 +144,14 @@ class BrainSession(requests.Session):
         **kwargs,
     ) -> requests.Response:
         url = endpoints.absolute(url)
+        parts = urlsplit(url)
+        if (parts.scheme, parts.netloc) != ("https", "api.worldquantbrain.com"):
+            raise ApiError("requests are restricted to the HTTPS BRAIN API origin")
+        method = method.upper()
+        safe_retry = method in {"GET", "HEAD", "OPTIONS"}
+        # Do not follow redirects that could replay a write or leak cookies.
+        kwargs["allow_redirects"] = False
+        safe_url = diagnostic_url(url)
         kwargs.setdefault("timeout", config.PACING.http_timeout)
 
         attempt = 0
@@ -146,17 +162,18 @@ class BrainSession(requests.Session):
             try:
                 response = super().request(method, url, **kwargs)
             except requests.RequestException as exc:
-                if attempt > config.PACING.max_retries:
-                    raise ApiError(f"{method} {url} failed: {exc}") from exc
+                if not safe_retry or attempt > config.PACING.max_retries:
+                    raise ApiError(f"{method} {safe_url} failed ({type(exc).__name__}); outcome may be unknown") from None
                 self.governor.sleep_backoff(attempt)
                 continue
 
             if self.verbose:
-                print(f"[wqo] {method} {url} -> {response.status_code}")
+                print(f"[wqo] {method} {safe_url} -> {response.status_code}")
 
             if (
                 response.status_code == 401
                 and allow_reauth
+                and safe_retry
                 and not reauthed
                 and not self._authenticating
                 and not url.endswith(endpoints.AUTHENTICATION)
@@ -165,10 +182,17 @@ class BrainSession(requests.Session):
                 self.authenticate()
                 continue
 
+            if 300 <= response.status_code < 400:
+                raise ApiError("API redirect refused; inspect the canonical endpoint", response)
+
             if is_retryable(response):
+                if not safe_retry:
+                    if response.status_code == 429 and on_throttle:
+                        on_throttle()
+                    return response
                 if attempt > config.PACING.max_retries:
                     raise ApiError(
-                        f"{method} {url} still {response.status_code} after "
+                        f"{method} {safe_url} still {response.status_code} after "
                         f"{attempt} attempts",
                         response,
                     )
@@ -217,7 +241,7 @@ class BrainSession(requests.Session):
 
         if response.status_code not in (200, 201):
             raise AuthError(
-                f"authentication failed ({response.status_code}): {response.text[:400]}"
+                f"authentication failed ({response.status_code}): {response_detail(response)}"
             )
 
         self._save_cookies()
@@ -238,7 +262,7 @@ class BrainSession(requests.Session):
         if response.status_code not in (200, 201):
             raise AuthError(
                 "biometric verification not accepted "
-                f"({response.status_code}): {response.text[:400]}\n"
+                f"({response.status_code}): {response_detail(response)}\n"
                 "Make sure you completed the Persona flow in your browser first."
             )
         self._save_cookies()
@@ -276,7 +300,7 @@ class BrainSession(requests.Session):
         response = self.request(method, url, **kwargs)
         if response.status_code >= 400:
             raise ApiError(
-                f"{method} {url} -> {response.status_code}: {response.text[:400]}",
+                f"{method} {diagnostic_url(url)} -> {response.status_code}: {response_detail(response)}",
                 response,
             )
         if not response.content:
@@ -284,7 +308,7 @@ class BrainSession(requests.Session):
         try:
             return response.json()
         except ValueError as exc:
-            raise ApiError(f"{method} {url} returned non-JSON body", response) from exc
+            raise ApiError(f"{method} {diagnostic_url(url)} returned non-JSON body", response) from exc
 
     def whoami(self) -> dict:
         return self.json("GET", endpoints.USERS_SELF)

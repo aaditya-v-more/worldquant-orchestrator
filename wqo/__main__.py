@@ -21,8 +21,9 @@ from typing import Any, Optional
 
 from . import account as account_mod
 from . import alphas as alphas_mod
-from . import config, endpoints, mining, submit as submit_mod
+from . import __version__, config, endpoints, mining, submit as submit_mod
 from .catalog import Catalog
+from .privacy import redact
 from .session import ApiError, AuthError, BiometricRequired, BrainSession
 from .simulate import (
     SimJob,
@@ -42,7 +43,7 @@ EXIT_REFUSED = 4
 
 
 def emit(payload: Any) -> None:
-    json.dump(payload, sys.stdout, indent=2, default=str)
+    json.dump(redact(payload), sys.stdout, indent=2, default=str)
     sys.stdout.write("\n")
 
 
@@ -77,6 +78,22 @@ def _settings_from(args) -> dict:
 # --------------------------------------------------------------------------
 # auth
 # --------------------------------------------------------------------------
+
+
+def cmd_state(args) -> int:
+    import sqlite3
+    from pathlib import Path
+    from .state import migrate_data
+
+    if args.migrate_from:
+        try:
+            migrate_data(Path(args.migrate_from).expanduser(), config.DATA_DIR)
+        except (OSError, ValueError, sqlite3.Error) as exc:
+            print(f"state migration refused: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+    emit({"data_dir": str(config.DATA_DIR), "ledger": str(config.LEDGER_PATH),
+          "migrated": bool(args.migrate_from)})
+    return EXIT_OK
 
 
 def cmd_auth(args) -> int:
@@ -482,6 +499,11 @@ def cmd_account(args) -> int:
 
 
 def cmd_api(args) -> int:
+    # A raw mutation can bypass submission and simulation quota enforcement.
+    if args.method.upper() not in {"GET", "HEAD", "OPTIONS"}:
+        raise submit_mod.SubmissionRefused(
+            "raw API writes are disabled; use the dedicated command and its safety checks"
+        )
     session = _session(args)
     kwargs: dict[str, Any] = {}
     if args.data:
@@ -493,7 +515,7 @@ def cmd_api(args) -> int:
     try:
         body = response.json()
     except ValueError:
-        body = response.text
+        body = "[non-JSON response omitted]"
     emit(
         {
             "status": response.status_code,
@@ -518,7 +540,7 @@ def cmd_discover(args) -> int:
             try:
                 found[path] = response.json()
             except ValueError:
-                found[path] = response.text[:2000]
+                found[path] = "[non-JSON response omitted]"
         else:
             found[path] = f"status {response.status_code}"
     emit(found)
@@ -551,8 +573,13 @@ def add_settings_args(parser: argparse.ArgumentParser) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="wqo", description=__doc__)
+    parser.add_argument("--version", action="version", version=f"wqo {__version__}")
     parser.add_argument("-v", "--verbose", action="store_true")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    state = sub.add_parser("state", help="show local paths or migrate an existing data directory")
+    state.add_argument("--migrate-from", metavar="DIRECTORY", help="copy legacy state; stop other wqo processes first")
+    state.set_defaults(func=cmd_state)
 
     # auth
     auth = sub.add_parser("auth", help="authentication and account status")
@@ -703,7 +730,7 @@ def build_parser() -> argparse.ArgumentParser:
     acct.set_defaults(func=cmd_account)
 
     # api
-    api = sub.add_parser("api", help="raw authenticated request to any endpoint")
+    api = sub.add_parser("api", help="raw read-only authenticated request")
     api.add_argument("method")
     api.add_argument("path")
     api.add_argument("--data", help="JSON request body")

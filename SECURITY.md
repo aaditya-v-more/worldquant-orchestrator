@@ -46,3 +46,8 @@ If you believe your BRAIN credentials were exposed, change your password on
 [the platform](https://platform.worldquantbrain.com) first, then delete the
 cached session with `wqo auth logout`. Tell us afterwards — securing the
 account comes first.
+
+## Implemented safeguards and limits
+
+See [the safety controls](docs/safety.md) for submission reservations, uncertain
+outcomes, local quota windows, shared simulation slots and output redaction.

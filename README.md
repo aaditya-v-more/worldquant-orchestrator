@@ -20,9 +20,9 @@
 
 <p>
   <a href="https://platform.worldquantbrain.com"><img alt="WorldQuant BRAIN" src="https://img.shields.io/badge/WorldQuant-BRAIN-0A2540?style=for-the-badge"></a>
-  <img alt="Claude Code skills" src="https://img.shields.io/badge/Claude%20Code-8%20skills-D97757?style=for-the-badge&logo=anthropic&logoColor=white">
-  <img alt="GitHub Copilot skills" src="https://img.shields.io/badge/Copilot-8%20skills-24292E?style=for-the-badge&logo=githubcopilot&logoColor=white">
-  <img alt="Qoder skills" src="https://img.shields.io/badge/Qoder-8%20skills-5B8DEF?style=for-the-badge">
+  <img alt="Claude Code skills" src="https://img.shields.io/badge/Claude%20Code-9%20skills-D97757?style=for-the-badge&logo=anthropic&logoColor=white">
+  <img alt="GitHub Copilot skills" src="https://img.shields.io/badge/Copilot-9%20skills-24292E?style=for-the-badge&logo=githubcopilot&logoColor=white">
+  <img alt="Qoder skills" src="https://img.shields.io/badge/Qoder-9%20skills-5B8DEF?style=for-the-badge">
 </p>
 
 <p>
@@ -37,9 +37,10 @@
 
 <br>
 
-<img src="docs/media/demo.gif" width="760" alt="One request — build an alpha on analyst EPS estimates, backtest it, decide whether it is submittable — running end to end in an agent window">
+<img src="docs/media/demo.gif" width="760" alt="Synthetic demonstration of the research workflow, ending at the submission confirmation checkpoint">
 
-<p><sub><b>One request, start to finish.</b> The agent picks the data field out of the catalog, writes the FASTEXPR, backtests it<br>through the API, sweeps the variants, runs the submission gate — then stops and asks you before it sends anything.<br><a href="docs/media/demo.mp4">Full-resolution video →</a></sub></p>
+<p><sub><b>Synthetic demonstration.</b> All expressions, identifiers and results shown are illustrative;<br>this is not a live account recording or evidence of investment performance.<br>
+<a href="docs/media/demo.mp4">Full-resolution video →</a> · <a href="docs/demo.md">Synthetic walkthrough →</a></sub></p>
 
 </div>
 
@@ -60,11 +61,11 @@ agent required.
 </td>
 <td width="50%" valign="top">
 
-### 🤖 &nbsp;`.claude/skills/` — the skills
+### 🤖 &nbsp;`skills/` — portable agent skills
 
-Eight thin wrappers that teach an agent *when* and *how* to invoke each part, so
-"find me an alpha on analyst estimates" becomes real API calls. Symlinked for
-Copilot and Qoder.
+A core `wqo-cli` skill and eight companions teach agents how to use the client.
+Each installs missing WQO locally and works without a repository checkout.
+Install through `npx skills` for your supported agents.
 
 </td>
 </tr>
@@ -94,42 +95,50 @@ flowchart LR
 
 | Stage | Skill | What it does |
 |---|---|---|
-| 🔑 | [`wq-auth`](.claude/skills/wq-auth) | Session, quotas, level, biometric handoff |
-| 🗂️ | [`wq-data`](.claude/skills/wq-data) | Datasets, datafields, operators — cached 7 days |
-| ⛏️ | [`wq-mine`](.claude/skills/wq-mine) | Generate candidates, backtest in batch, rank survivors |
-| 🔬 | [`wq-simulate`](.claude/skills/wq-simulate) | One expression, or a sweep over settings and fields |
-| 📊 | [`wq-analyze`](.claude/skills/wq-analyze) | IS stats, PnL, yearly breakdown, correlations, checks |
-| 🏷️ | [`wq-alphas`](.claude/skills/wq-alphas) | Filter and organize the library — names, tags, colours |
-| 🚀 | [`wq-submit`](.claude/skills/wq-submit) | Full check report, then waits for your explicit yes |
-| 🏆 | [`wq-account`](.claude/skills/wq-account) | Rank, competitions, teams, events, standing |
+| 🔑 | [`wqo-auth`](skills/wqo-auth) | Session, quotas, level, biometric handoff |
+| 🗂️ | [`wqo-data`](skills/wqo-data) | Datasets, datafields, operators — cached 7 days |
+| ⛏️ | [`wqo-mine`](skills/wqo-mine) | Generate candidates, backtest in batch, rank survivors |
+| 🔬 | [`wqo-simulate`](skills/wqo-simulate) | One expression, or a sweep over settings and fields |
+| 📊 | [`wqo-analyze`](skills/wqo-analyze) | IS stats, PnL, yearly breakdown, correlations, checks |
+| 🏷️ | [`wqo-alphas`](skills/wqo-alphas) | Filter and organize the library — names, tags, colours |
+| 🚀 | [`wqo-submit`](skills/wqo-submit) | Full check report, then waits for your explicit yes |
+| 🏆 | [`wqo-account`](skills/wqo-account) | Rank, competitions, teams, events, standing |
 
 ---
 
 ## ⚡ Quick start
 
 ```bash
-uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python -r requirements.txt
+uv tool install --python 3.12 wqo
+wqo --version
 ```
 
-Create your credentials file yourself — nothing in this repo will write it:
+Python 3.12+; macOS and Linux. See [installation, upgrades and existing-ledger
+migration](docs/installation.md). No manual clone is required.
+[WQO is available on PyPI](https://pypi.org/project/wqo/).
+
+Create your credentials file in a text editor — nothing in this repo will write it.
+Use this JSON format and keep the password out of shell history:
+
+```json
+{"email": "you@example.com", "password": "..."}
+```
 
 ```bash
-printf '{"email": "you@example.com", "password": "..."}' > ~/.brain_credentials.json
 chmod 600 ~/.brain_credentials.json
 ```
 
 Then:
 
 ```bash
-.venv/bin/python -m wqo auth status
+wqo auth status
 ```
 
 > [!IMPORTANT]
 > **First login on a new account.** BRAIN usually requires a Persona biometric
 > check the first time an account authenticates through the API. The command
 > exits with code `2` and prints a URL. Open it in a browser, complete the check,
-> then run `python -m wqo auth persona`.
+> then run `wqo auth persona`.
 > This is a human step by design — nothing here bypasses it.
 
 ---
@@ -257,7 +266,13 @@ alpha may be submitted.
 - `submit` without `--confirm` **cannot** submit. It prints the check report and
   exits `4`.
 - With `--confirm` but a failing gate, it still refuses unless `--force`.
-- A local daily submission budget (default 3) is enforced before the request.
+- Submission quota is reserved atomically before the request; unresolved writes
+  retain their reservation and cannot be retried through `submit`.
+- Raw `api` is read-only. Writes are never automatically replayed.
+- Processes sharing one ledger share simulation slots and quota accounting.
+
+See [safety controls and limits](docs/safety.md), including the conservative
+submission window and how to handle uncertain outcomes.
 
 Credentials are read directly from disk into HTTP Basic auth. They are never
 logged, echoed, or written by this tool.
@@ -269,10 +284,10 @@ logged, echoed, or written by this tool.
 This uses the official API, which is the sanctioned integration path — but it
 behaves like a good client rather than hammering the endpoint:
 
-- **`Retry-After` is honored exactly**, for simulation polling, checks,
-  correlations, and 429s. The server sets the cadence.
+- **`Retry-After` governs read retries and polling**, including simulation progress,
+  checks and correlations. A throttled write stops without an automatic replay.
 - Minimum interval plus jitter between all requests.
-- Exponential backoff with full jitter on 429/5xx.
+- Exponential backoff with full jitter on read requests receiving 429/5xx.
 - **Concurrency is *learned* from the account:** it starts at 1 slot, grows only
   after clean runs, and shrinks immediately on a 429. Persisted between runs.
 - The session cookie is cached on disk and reused. Re-authenticating on every
@@ -289,22 +304,18 @@ Tunable via environment variables — `WQO_MIN_INTERVAL`, `WQO_JITTER`,
 
 ## 🧩 Editor support
 
-The eight skills live in `.claude/skills/` and are symlinked so other agents pick
-up the same files — **edit once, every tool sees it**:
+Install skills from your working project:
 
-```
-.github/skills -> ../.claude/skills   # GitHub Copilot (VS Code, CLI, cloud agent)
-.qoder/skills  -> ../.claude/skills   # Qoder
+```bash
+npx skills add aaditya-v-more/worldquant-orchestrator --skill wqo-cli
 ```
 
-Both use the same `SKILL.md` + YAML frontmatter format, so no conversion is
-needed. Copilot also reads `.claude/skills` directly; the `.github/skills` link
-is there so the intent is explicit and the CLI and cloud agent resolve it too.
+Choose your agents in the installer; omit `--global` to keep installation local.
+Use `--skill '*'` for all nine skills. Each companion works alone and installs
+missing WQO into the project's `.wqo/venv`.
 
-> [!TIP]
-> These are relative symlinks and survive a clone on macOS and Linux. On Windows,
-> git needs `core.symlinks=true` and Developer Mode, otherwise they land as plain
-> text files — copy the directories instead if that comes up.
+Source packages live in `skills/`; installed agent folders are gitignored.
+See [portable skills and local installation](docs/skills.md).
 
 ---
 
@@ -376,7 +387,7 @@ parsing, slot adaptation, template expansion, and ranking.
 **[Contributing](CONTRIBUTING.md)** · **[Code of conduct](CODE_OF_CONDUCT.md)** · **[Security](SECURITY.md)** · **[Licence](LICENSE)**
 
 <sub>MIT licensed. Not affiliated with or endorsed by WorldQuant.<br>
-Alpha expressions and account statistics stay on your machine — see <a href="CONTRIBUTING.md">CONTRIBUTING.md</a>.</sub>
+Alpha expressions are sent to BRAIN for simulation; local ledgers and account statistics should stay out of Git — see <a href="CONTRIBUTING.md">CONTRIBUTING.md</a>.</sub>
 
 <br>
 

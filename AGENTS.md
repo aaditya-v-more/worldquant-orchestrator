@@ -21,7 +21,7 @@ If `.venv` does not exist:
 
 ```bash
 uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python -r requirements.txt
+uv pip install --python .venv/bin/python -r requirements-dev.txt
 ```
 
 System Python is 3.9 and will not run this code — it uses `X | None` annotations
@@ -144,8 +144,10 @@ wq-submit    →  report, ask the user, then submit
 wq-account   →  rank, competitions, events, standing
 ```
 
-Skills live in `.claude/skills/`, symlinked to `.github/skills` (Copilot) and
-`.qoder/skills` (Qoder). Same files, one source of truth — edit once.
+Distributable skill sources live in `skills/`; a core `wqo-cli` skill and eight
+companions install via `npx skills`. Local installed agent folders are gitignored.
+Edit shared setup in `skill-support/` and run `.venv/bin/python scripts/sync_skills.py`
+to vendor it into every standalone skill. See `docs/skills.md`.
 
 ---
 

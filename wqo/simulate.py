@@ -16,13 +16,15 @@ from __future__ import annotations
 import re
 import threading
 import time
+import uuid
 from dataclasses import dataclass
 from queue import Empty, Queue
 from typing import Iterable, Optional
 
 from . import config, endpoints
 from .session import ApiError, BrainSession
-from .store import Ledger, check_simulation_budget
+from .privacy import response_detail
+from .store import BudgetExceeded, Ledger, check_simulation_budget
 
 SLOTS_KEY = "learned_concurrency"
 
@@ -158,17 +160,33 @@ class SlotManager:
         # instead of oscillating 1 -> 2 -> 429 -> 1 forever.
         self._ceiling: Optional[int] = None
         self._cond = threading.Condition()
+        self._owners = threading.local()
+        self._persisted_limit = self.limit
 
     def acquire(self) -> None:
+        if getattr(self._owners, "token", None):
+            raise RuntimeError("thread already holds a simulation slot")
+        owner = uuid.uuid4().hex
         with self._cond:
-            while self._active >= self.limit:
-                self._cond.wait()
-            self._active += 1
+            while True:
+                if self._active < self.limit and (
+                    self.ledger is None or self.ledger.try_acquire_slot(owner, self.limit)
+                ):
+                    self._active += 1
+                    self._owners.token = owner
+                    return
+                self._cond.wait(timeout=0.1)
 
     def release(self) -> None:
         with self._cond:
+            owner = getattr(self._owners, "token", None)
+            if owner is None:
+                raise RuntimeError("thread does not hold a simulation slot")
+            if self.ledger:
+                self.ledger.release_slot(owner)
+            self._owners.token = None
             self._active -= 1
-            self._cond.notify()
+            self._cond.notify_all()
 
     def report_success(self) -> None:
         with self._cond:
@@ -207,7 +225,8 @@ class SlotManager:
 
     def _persist(self) -> None:
         if self.ledger:
-            self.ledger.set(SLOTS_KEY, self.limit)
+            self.limit = self.ledger.update_concurrency(self._persisted_limit, self.limit)
+            self._persisted_limit = self.limit
 
 
 def _poll_until_done(
@@ -220,7 +239,7 @@ def _poll_until_done(
         if response.status_code >= 400:
             raise ApiError(
                 f"simulation poll failed ({response.status_code}): "
-                f"{response.text[:300]}",
+                f"{response_detail(response)}",
                 response,
             )
         try:
@@ -271,17 +290,17 @@ def simulate_one(
                 cached=True,
             )
 
-    if ledger:
-        check_simulation_budget(ledger)
-        row_id = ledger.start_simulation(
-            job.code, job.settings, source=source, label=job.label
-        )
-    else:
-        row_id = None
-
+    row_id = None
+    slots = slots or (SlotManager(ledger) if ledger else None)
     if slots:
         slots.acquire()
     try:
+        # Reserve at dispatch, after waiting for a shared slot, so a queued job
+        # cannot carry yesterday's budget reservation into today's execution.
+        if ledger:
+            row_id = ledger.start_simulation(
+                job.code, job.settings, source=source, label=job.label
+            )
         # A 429 here is slot pressure; feed it straight to the SlotManager so it
         # shrinks the limit now rather than after this job burns its retry budget.
         response = session.request(
@@ -290,19 +309,18 @@ def simulate_one(
             json=job.payload(),
             on_throttle=slots.report_throttled if slots else None,
         )
-        # No 429 check here: session.request() never returns a retryable status
-        # — it either retries past it or raises ApiError. on_throttle above is
-        # what feeds slot pressure back to the SlotManager.
+        # Writes are never replayed automatically, including on a 429.
+        # on_throttle still teaches the shared slot limiter about pressure.
         if response.status_code >= 400:
             raise ApiError(
-                f"simulation rejected ({response.status_code}): {response.text[:300]}",
+                f"simulation rejected ({response.status_code}): {response_detail(response)}",
                 response,
             )
         sim_url = response.headers.get("Location")
         if not sim_url:
             raise ApiError(
                 "simulation accepted but no Location header was returned; "
-                f"body: {response.text[:300]}",
+                f"body: {response_detail(response)}",
                 response,
             )
         sim_url = endpoints.absolute(sim_url)
@@ -325,6 +343,8 @@ def simulate_one(
             sim_url=sim_url,
             label=job.label,
         )
+    except BudgetExceeded:
+        raise
     except Exception as exc:  # noqa: BLE001 — recorded and returned, not swallowed
         if ledger and row_id is not None:
             ledger.fail_simulation(row_id, str(exc))
@@ -364,6 +384,8 @@ def simulate_many(
 
     results: list[SimResult] = []
     results_lock = threading.Lock()
+    budget_errors: list[BudgetExceeded] = []
+    stopped = threading.Event()
 
     # A fixed worker pool bounded by MAX_CONCURRENCY; SlotManager throttles how
     # many of these are actually in flight at once. Pooling matters because a
@@ -371,19 +393,26 @@ def simulate_many(
     pool_size = min(len(jobs), config.MAX_CONCURRENCY)
 
     def worker() -> None:
-        while True:
+        while not stopped.is_set():
             try:
                 job = queue.get_nowait()
             except Empty:
                 return
-            result = simulate_one(
-                session,
-                job,
-                ledger=ledger,
-                slots=slots,
-                source=source,
-                reuse_cached=reuse_cached,
-            )
+            try:
+                result = simulate_one(
+                    session,
+                    job,
+                    ledger=ledger,
+                    slots=slots,
+                    source=source,
+                    reuse_cached=reuse_cached,
+                )
+            except BudgetExceeded as exc:
+                with results_lock:
+                    budget_errors.append(exc)
+                stopped.set()
+                queue.task_done()
+                return
             with results_lock:
                 results.append(result)
                 if on_result:
@@ -400,4 +429,6 @@ def simulate_many(
 
     for thread in threads:
         thread.join()
+    if budget_errors:
+        raise budget_errors[0]
     return results

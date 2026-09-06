@@ -16,6 +16,7 @@ from typing import Any, Iterator, Optional
 
 from . import config, endpoints
 from .session import ApiError, BrainSession
+from .privacy import diagnostic_url, response_detail
 
 PAGE_SIZE = 100
 
@@ -29,7 +30,7 @@ def await_payload(
         response = session.request("GET", url)
         if response.status_code >= 400:
             raise ApiError(
-                f"GET {url} -> {response.status_code}: {response.text[:300]}", response
+                f"GET {diagnostic_url(url)} -> {response.status_code}: {response_detail(response)}", response
             )
         retry_after = response.headers.get("Retry-After")
         has_body = bool(response.content and response.content.strip())

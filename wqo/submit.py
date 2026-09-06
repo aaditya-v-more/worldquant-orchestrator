@@ -20,7 +20,7 @@ from typing import Any, Optional
 
 from . import alphas, config, endpoints, gate
 from .session import ApiError, BrainSession
-from .store import Ledger, check_submission_budget
+from .store import Ledger, SubmissionConflict
 
 
 class SubmissionRefused(RuntimeError):
@@ -131,45 +131,54 @@ def submit(
         raise SubmissionRefused(
             f"gate is not clean ({blocking}); pass --force to submit anyway"
         )
-    if ledger:
-        check_submission_budget(ledger)
+    if prep.alpha_id != alpha_id:
+        raise SubmissionRefused("preparation belongs to a different alpha")
+    if ledger is None:
+        raise SubmissionRefused("submission requires a persistent quota ledger")
+    if str(ledger.path) == ":memory:":
+        raise SubmissionRefused("submission requires a persistent quota ledger")
+    try:
+        reservation = ledger.reserve_submission(alpha_id)
+    except SubmissionConflict as exc:
+        raise SubmissionRefused(str(exc)) from exc
 
-    response = session.request("POST", endpoints.alpha_submit(alpha_id))
-    if response.status_code >= 400:
-        detail = response.text[:400]
-        if ledger:
-            ledger.record_submission(alpha_id, "FAILED", {"detail": detail})
-        raise ApiError(f"submission rejected ({response.status_code}): {detail}", response)
-
-    # Submission is processed asynchronously; poll it out the same way as
-    # any other Retry-After gated endpoint.
-    deadline = time.monotonic() + config.PACING.poll_timeout
+    # The reservation survives interruption, timeout and process death. Only a
+    # definite rejection releases it; an ambiguous response remains UNKNOWN.
+    outcome = "UNKNOWN"
     payload: Any = None
-    while True:
-        if response.headers.get("Retry-After") is None:
-            if response.content and response.content.strip():
-                try:
-                    payload = response.json()
-                except ValueError:
-                    payload = None
-            break
-        if time.monotonic() > deadline:
-            raise ApiError(f"submission of {alpha_id} did not resolve in time")
-        session.governor.sleep_retry_after(response)
-        response = session.request("GET", endpoints.alpha_submit(alpha_id))
-        if response.status_code >= 400:
-            detail = response.text[:400]
-            if ledger:
-                ledger.record_submission(alpha_id, "FAILED", {"detail": detail})
-            raise ApiError(
-                f"submission failed ({response.status_code}): {detail}", response
-            )
+    try:
+        response = session.request("POST", endpoints.alpha_submit(alpha_id))
+        if response.status_code in {400, 401, 403, 404, 422, 429}:
+            outcome = "FAILED"
+            raise ApiError(f"submission rejected ({response.status_code})", response)
+        if not 200 <= response.status_code < 300:
+            raise ApiError(f"submission outcome unknown ({response.status_code}); do not retry", response)
 
-    if ledger:
-        ledger.record_submission(alpha_id, "SUBMITTED", payload)
+        deadline = time.monotonic() + config.PACING.poll_timeout
+        while response.headers.get("Retry-After") is not None:
+            if time.monotonic() > deadline:
+                raise ApiError("submission did not resolve in time; do not retry")
+            session.governor.sleep_retry_after(response)
+            response = session.request("GET", endpoints.alpha_submit(alpha_id))
+            if not 200 <= response.status_code < 300:
+                raise ApiError(f"submission polling failed ({response.status_code}); do not retry", response)
+        if response.status_code == 202:
+            raise ApiError("submission accepted but not resolved; do not retry")
+        if response.content and response.content.strip():
+            try:
+                payload = response.json()
+            except ValueError:
+                raise ApiError("submission returned an unreadable result; do not retry") from None
+            if isinstance(payload, dict) and str(payload.get("status", "")).upper() in {
+                "ERROR", "FAIL", "FAILED", "PENDING", "RUNNING", "IN_PROGRESS"
+            }:
+                raise ApiError("submission result is unresolved; verify on BRAIN and do not retry")
+        outcome = "SUBMITTED"
+    finally:
+        ledger.finish_submission(reservation, outcome, payload)
     return {
         "alpha_id": alpha_id,
         "url": endpoints.alpha_url(alpha_id),
-        "outcome": "SUBMITTED",
+        "outcome": outcome,
         "detail": payload,
     }

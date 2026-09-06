@@ -28,3 +28,16 @@ provenance/
 # third-party reference material. Keep a copy locally if you have one; this
 # repo does not redistribute it.
 *.pdf
+
+# Local package build output
+/build/
+/dist/
+*.egg-info/
+
+# Installed project-local skills and CLI environments; sources stay in skills/.
+/.agents/skills/
+/.claude/skills/
+/.github/skills
+/.qoder/skills
+/skills-lock.json
+/.wqo/

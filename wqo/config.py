@@ -42,7 +42,16 @@ SESSION_PATH = Path(
     _env_str("WQO_SESSION", str(Path.home() / ".brain_session.json"))
 ).expanduser()
 
-DATA_DIR = Path(_env_str("WQO_DATA_DIR", str(REPO_DIR / "data"))).expanduser()
+def default_data_dir() -> Path:
+    """A stable per-user location, independent of the checkout/install directory."""
+    xdg = os.environ.get("XDG_DATA_HOME")
+    base = Path(xdg).expanduser() if xdg else Path.home() / ".local" / "share"
+    if not base.is_absolute():
+        base = Path.home() / ".local" / "share"
+    return base / "wqo"
+
+
+DATA_DIR = Path(_env_str("WQO_DATA_DIR", str(default_data_dir()))).expanduser().resolve()
 LEDGER_PATH = DATA_DIR / "wqo.sqlite"
 CATALOG_PATH = DATA_DIR / "catalog.sqlite"
 PENDING_PERSONA_PATH = DATA_DIR / "pending_persona.json"
@@ -50,7 +59,7 @@ LOG_PATH = DATA_DIR / "wqo.log"
 
 
 def ensure_data_dir() -> Path:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    DATA_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
     return DATA_DIR
 
 

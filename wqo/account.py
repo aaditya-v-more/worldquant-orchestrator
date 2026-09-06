@@ -202,6 +202,6 @@ def probe(session: BrainSession, paths: Optional[tuple[str, ...]] = None) -> lis
             except ValueError:
                 note = "non-json"
         else:
-            note = response.text[:100].replace("\n", " ")
+            note = "response body omitted from diagnostic output"
         out.append({"path": path, "status": response.status_code, "note": note})
     return out

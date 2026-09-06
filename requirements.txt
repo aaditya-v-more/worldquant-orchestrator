@@ -1,2 +1,2 @@
-requests>=2.31
-pytest>=8.0
+# Runtime dependencies are defined in pyproject.toml.
+.
